@@ -1,0 +1,31 @@
+import { test, expect, choose, settings, closePanel } from './fixtures';
+import path from 'node:path';
+
+test('ordinary facilitator is the default, speakers lead and explicitly confirm the same result', async ({ page }) => {
+  const errors: string[] = []; page.on('pageerror', e => errors.push(e.message));
+  await page.goto('/'); await choose(page, '回覆來源', 'fake');
+  await page.getByRole('switch', { name: '啟用獨立主持人' }).check();
+  await expect(page.getByRole('checkbox', { name: '主持人裁判模式' })).not.toBeChecked();
+  await expect(page.getByRole('radiogroup', { name: '發言方式', exact: true }).getByRole('radio').first()).toBeEnabled();
+  await choose(page, '進行方式', 'conclusion'); await page.getByRole('textbox', { name: '討論題目', exact: true }).fill('Ordinary moderator fixture.');
+  await page.getByRole('button', { name: '建立並開始討論 →' }).click();
+  await expect(page.locator('.room-outcome')).toContainText('已完成結論');
+  const state = await page.evaluate(async () => (await (await fetch('/api/discussions')).json()).find((s: any) => s.topic === 'Ordinary moderator fixture.'));
+  expect(state.moderatorMode).toBe('facilitator'); expect(state.room.outcome.authority).toBe('participants');
+  expect(state.room.calls.slice(0, 2).map((c: any) => c.participant)).toEqual(['codex', 'claude']);
+  expect(state.room.calls.filter((c: any) => c.purpose === 'monitor')).toHaveLength(0);
+  await settings(page); await expect(page.getByRole('checkbox', { name: '主持人裁判模式' })).toBeEnabled();
+  await page.getByRole('checkbox', { name: '主持人裁判模式' }).check();
+  await expect.poll(async () => (await (await page.request.get('/api/discussions/' + state.id)).json()).moderatorMode).toBe('judge');
+  await closePanel(page); await page.reload(); await settings(page);
+  await expect(page.getByRole('checkbox', { name: '主持人裁判模式' })).toBeChecked();
+  await page.getByRole('checkbox', { name: '主持人裁判模式' }).uncheck();
+  await expect.poll(async () => (await (await page.request.get('/api/discussions/' + state.id)).json()).moderatorMode).toBe('facilitator');
+  const changed = await (await page.request.get('/api/discussions/' + state.id)).json();
+  expect(changed.room.calls).toHaveLength(state.room.calls.length); expect(changed.room.sessions).toEqual({}); expect(changed.activity).toBeNull();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole('heading', { name: '主持人權限' }).scrollIntoViewIfNeeded();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  if (process.env.CANDC_SCREENSHOT_DIR) await page.screenshot({ path: path.join(process.env.CANDC_SCREENSHOT_DIR, 'moderator-authority-mobile.png') });
+  expect(errors).toEqual([]);
+});

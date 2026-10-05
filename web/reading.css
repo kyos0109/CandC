@@ -1,0 +1,36 @@
+/* Public reading content only. Shared layout and theme tokens live in styles.css. */
+.markdown,.user-text{font-size:var(--reading-size);line-height:1.72;letter-spacing:.01em;overflow-wrap:anywhere}
+.user-text{white-space:pre-wrap}
+.markdown p{margin:0 0 10px}
+.markdown>:first-child{margin-top:0}
+.markdown>:last-child{margin-bottom:0}
+.markdown h1{font-size:1.18em}
+.markdown h2{font-size:1.12em}
+.markdown h3,.markdown h4,.markdown h5,.markdown h6{font-size:1.05em}
+.markdown :is(h1,h2,h3,h4,h5,h6){margin:18px 0 6px;font-weight:650;line-height:1.45;letter-spacing:0}
+.markdown ul,.markdown ol{margin:6px 0 10px;padding-left:22px}
+.markdown li{margin:3px 0}
+.markdown li::marker{color:var(--faint)}
+.markdown li>input{display:inline;width:auto;min-height:0;margin:0 8px 0 0;accent-color:var(--accent)}
+.markdown strong{font-weight:650}
+.markdown blockquote{margin:12px 0;padding-left:12px;border-left:3px solid var(--line-strong);color:var(--muted)}
+.markdown hr{margin:16px 0;border:0;border-top:1px solid var(--line)}
+.markdown code{padding:1px 5px;border:1px solid var(--line);border-radius:5px;background:var(--code);font-family:var(--mono);font-size:.86em}
+.markdown pre{max-width:100%;overflow-x:auto;margin:12px 0;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--code);font-size:.86em;line-height:1.55;white-space:pre}
+.markdown pre code{padding:0;border:0;background:transparent;font-size:inherit}
+.table-scroll{max-width:100%;overflow-x:auto;margin:12px 0;border:1px solid var(--line);border-radius:10px}
+.markdown table{min-width:100%;border-collapse:collapse;font-size:.9em}
+.markdown th,.markdown td{padding:8px 14px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
+.markdown th{background:var(--code);color:var(--muted);font-size:.92em;font-weight:600}
+.markdown tr:last-child td{border-bottom:0}
+.public-details{margin-top:6px}
+.public-details>summary{display:inline-flex;align-items:center;gap:4px;min-height:28px;margin:0;padding:2px 8px;border-radius:6px;color:var(--accent);font-size:12.5px;font-weight:600;list-style:none}
+.public-details>summary::-webkit-details-marker{display:none}
+.public-details>summary::after{content:"▾";font-size:11px}
+.public-details[open]>summary::after{content:"▴"}
+.public-details>summary:hover{background:var(--hover)}
+.public-details>.markdown{padding-top:6px}
+/* In a saved message the toggle sits in the action row, so opening details never moves it. */
+.message:not(.pending) .message-body>.public-sections .public-details>summary{position:absolute;bottom:10px;left:10px}
+/* Narrow bubbles cannot fit the toggle beside the actions, so it returns to the flow above them. */
+@media(max-width:767px){.public-details>summary{min-height:36px}.message:not(.pending) .message-body>.public-sections .public-details>summary{position:static;margin-left:-8px}}

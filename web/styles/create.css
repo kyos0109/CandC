@@ -1,0 +1,147 @@
+/* Create page: hero, step rail, topic stage, seat cards, moderator card, rule cards and the launch bar. Replaces the earlier create-flow rules. */
+.create-page{display:grid;grid-template-columns:minmax(0,1fr);max-width:792px;margin:0 auto;padding:44px 24px 96px}
+.cf-hero{margin-bottom:32px}
+.cf-hero h1{margin:0 0 8px;font-size:var(--text-display);font-weight:700;letter-spacing:-.02em;line-height:1.2}
+.cf-hero .lead{margin:0;color:var(--muted);font-size:14.5px}
+.create-page>form{display:block}
+.create-page .notice{margin:0 0 16px}
+@media(min-width:1360px){
+  .create-page{grid-template-columns:minmax(0,1fr) minmax(0,720px) minmax(0,1fr);max-width:none}
+  .cf-rail{grid-column:1;grid-row:1 / span 2;justify-self:end;width:148px;margin-right:32px}
+  .cf-hero,.create-page>form{grid-column:2}
+}
+
+/* Step rail: where you are and what is already done. Only on wide screens. */
+.cf-rail{display:none}
+@media(min-width:1360px){.cf-rail{display:block;position:sticky;top:104px;align-self:start}}
+.cf-rail ol{margin:0;padding:0;list-style:none}
+.cf-rail li{position:relative;padding:0 0 30px 38px}
+.cf-rail li:last-child{padding-bottom:0}
+.cf-rail li::before{position:absolute;top:30px;bottom:6px;left:11px;width:2px;border-radius:2px;content:"";background:linear-gradient(var(--accent),var(--accent)) top / 100% 0% no-repeat,var(--line);transition:background-size var(--dur-3) var(--ease-out)}
+.cf-rail li:last-child::before{display:none}
+.cf-rail li.done::before{background-size:100% 100%}
+.cf-rail a{display:flex;align-items:center;min-height:24px;color:var(--muted);font-size:13px;font-weight:600;text-decoration:none;transition:color var(--dur-1)}
+.cf-rail a:hover,.cf-rail li.current a{color:var(--text)}
+.cf-dot{position:absolute;top:0;left:0;display:grid;place-items:center;width:24px;height:24px;border:1.5px solid var(--line-strong);border-radius:50%;background:var(--page);color:var(--muted);font-size:11.5px;font-weight:700;font-variant-numeric:tabular-nums;transition:background var(--dur-2),border-color var(--dur-2),color var(--dur-2),box-shadow var(--dur-2)}
+.cf-dot .icon{width:12px;height:12px;stroke-width:2.4}
+.cf-rail li.current .cf-dot{border-color:var(--accent);color:var(--accent);box-shadow:0 0 0 4px var(--accent-glow)}
+.cf-rail li.done .cf-dot{border-color:var(--accent);background:var(--accent);color:var(--primary-text)}
+
+.cf-section{margin:0 0 40px;scroll-margin-top:24px}
+.cf-heading{display:flex;align-items:center;gap:12px;margin:0 0 14px;font-size:var(--text-heading);font-weight:650;letter-spacing:-.005em}
+.step-no{display:grid;place-items:center;width:24px;height:24px;border-radius:50%;background:var(--accent-soft);color:var(--accent);font-size:12px;font-weight:700;font-variant-numeric:tabular-nums}
+.cf-heading small{margin-left:auto;color:var(--muted);font-size:var(--text-caption);font-weight:500;font-variant-numeric:tabular-nums}
+
+/* Topic: one generous writing surface with a faint wash of the accent. */
+.cf-stage{padding:18px 20px 0;border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--stage-tint),var(--surface);box-shadow:var(--inner-highlight),var(--elev-2);transition:border-color var(--dur-2) var(--ease-out),box-shadow var(--dur-3) var(--ease-out)}
+.cf-stage:focus-within{border-color:var(--accent-line);box-shadow:var(--inner-highlight),var(--elev-2),0 0 0 4px var(--accent-glow)}
+.cf-stage>textarea,.cf-stage>textarea:hover,.cf-stage>textarea:focus,.cf-stage>textarea:focus-visible{display:block;min-height:132px;margin:0;padding:0;border:0;border-radius:0;background:transparent;box-shadow:none;outline:none;font-size:17px;line-height:1.7;resize:vertical}
+.cf-stage-foot{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:12px;margin:10px -20px 0;padding:0 20px;border-top:1px solid var(--line)}
+.cf-stage .supplement{margin:0;border:0}
+.cf-stage .supplement>summary{display:inline-flex;align-items:center;gap:6px;min-height:42px;margin:0;padding:0;color:var(--accent);font-size:var(--text-caption);font-weight:600;list-style:none}
+.cf-stage .supplement>summary::-webkit-details-marker{display:none}
+.cf-stage .supplement::details-content{block-size:0;overflow:clip;opacity:0;transition:block-size var(--dur-3) var(--ease-out),opacity var(--dur-2) var(--ease-out),content-visibility var(--dur-3) allow-discrete}
+.cf-stage .supplement[open]::details-content{block-size:auto;opacity:1}
+.cf-stage .supplement-fields{padding:2px 0 16px}
+.cf-count{align-self:center;color:var(--faint);font-size:12px;font-variant-numeric:tabular-nums}
+
+/* Connection check: a quiet row of provider capsules. */
+.connection-check{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:0 0 14px;padding:8px 8px 8px 10px;border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--surface-soft)}
+.connection-check ul{display:flex;flex:1;flex-wrap:wrap;gap:6px;margin:0;padding:0;list-style:none}
+.connection-check li{display:inline-flex;align-items:center;gap:8px;min-height:28px;padding:0 11px 0 10px;border-radius:999px;background:var(--surface);box-shadow:inset 0 0 0 1px var(--line);color:var(--muted);font-size:12px;line-height:1}
+.connection-check li b{color:var(--text);font-weight:600}
+.connection-check li i{flex:none;width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 3px color-mix(in srgb,var(--ok) 20%,transparent)}
+.connection-check li.bad i{background:var(--run);box-shadow:0 0 0 3px color-mix(in srgb,var(--run) 24%,transparent)}
+.connection-check>button{min-height:28px;padding:0 10px;border:0;background:transparent;box-shadow:none;color:var(--accent);font-size:12.5px}
+.connection-check>button:hover{background:var(--accent-soft)}
+
+/* Presets: each previews the table it creates. */
+.preset-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:0 0 16px}
+.preset-row>button{flex-direction:column;align-items:flex-start;justify-content:center;gap:10px;min-height:78px;padding:12px 14px;border-radius:var(--radius-lg);box-shadow:var(--inner-highlight),var(--elev-1);text-align:left;font-size:13px}
+.preset-row>button:hover{border-color:var(--line-strong);box-shadow:var(--inner-highlight),var(--elev-2)}
+.preset-row>button[aria-pressed=true]{border-color:var(--accent-line);background:var(--accent-soft);color:var(--accent-strong);box-shadow:0 0 0 3px var(--accent-glow)}
+.preset-seats{display:inline-flex}
+.preset-seats .seat-avatar{margin-left:-6px;box-shadow:0 0 0 2px var(--surface)}
+.preset-seats .seat-avatar:first-child{margin-left:0}
+.preset-row>button[aria-pressed=true] .preset-seats .seat-avatar{box-shadow:0 0 0 2px var(--accent-soft)}
+.provider-picker{display:flex;flex-wrap:wrap;align-items:center;gap:8px;grid-column:1 / span 3;color:var(--muted);font-size:var(--text-caption)}
+.provider-picker button{gap:7px;min-height:34px;padding:0 13px 0 5px;box-shadow:var(--inner-highlight),var(--elev-1)}
+.preset-row .preset-cancel{grid-column:4;justify-self:end;min-height:34px;width:auto;border-color:transparent;background:transparent;box-shadow:none;color:var(--muted)}
+
+/* Seat cards. A fixed set of rows keeps every card the same height whatever is chosen. */
+.cf-seats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.seat-row{position:relative;display:grid;align-content:start;gap:12px;padding:16px;border:1px solid var(--line);border-radius:var(--radius-lg);
+  background:linear-gradient(180deg,color-mix(in srgb,var(--dot,var(--accent)) 8%,transparent),transparent 96px),var(--surface);box-shadow:var(--inner-highlight),var(--elev-1);
+  animation:cf-in var(--dur-3) var(--ease-out) both;animation-delay:calc(var(--i,0) * 45ms);transition:transform var(--dur-2) var(--ease-out),box-shadow var(--dur-2) var(--ease-out),border-color var(--dur-1)}
+.seat-row:hover{transform:translateY(-1px);border-color:var(--line-strong);box-shadow:var(--inner-highlight),var(--elev-2)}
+.seat-row:focus-within{border-color:var(--accent-line)}
+/* A card with an open popover must stack above the cards after it. */
+.seat-row:has(.mp-pop),.host-card:has(.mp-pop){z-index:4}
+.host-card{position:relative}
+.seat-row.leaving{animation:cf-out 180ms var(--ease-out) forwards}
+@keyframes cf-in{from{opacity:0;transform:translateY(8px) scale(.985)}}
+@keyframes cf-out{to{opacity:0;transform:scale(.96)}}
+@keyframes cf-pop{from{opacity:0;transform:scale(.4)}}
+.seat-head{display:flex;align-items:center;gap:10px;min-width:0}
+.seat-head .seat-avatar:not(.alt){box-shadow:0 0 0 3px color-mix(in srgb,var(--dot,var(--accent)) 14%,transparent)}
+.create-page .seat-head .seat-name{flex:1;min-width:0;margin:0;padding:6px 8px;border-color:transparent;background:transparent;font-size:15px;font-weight:650;letter-spacing:-.005em}
+.create-page .seat-head .seat-name:hover:not(:focus){border-color:var(--line)}
+.create-page .seat-head .seat-name::placeholder{color:var(--text);opacity:.82}
+.seat-remove{flex:none;min-width:30px;min-height:30px;padding:0;border-color:transparent;background:transparent;box-shadow:none;color:var(--faint)}
+.seat-remove:hover:not(:disabled){background:var(--hover);color:var(--text)}
+.seat-stance-row{display:flex;align-items:center;gap:8px;min-height:38px}
+.seat-stance-row .segmented{flex:none}
+.create-page .seat-row .seat-stance{flex:1;min-width:0;margin:0;min-height:38px;font-size:13px}
+.seat-foot{display:flex;align-items:center;min-height:22px}
+.seat-foot .chip::before{width:6px;height:6px;margin-right:6px;border-radius:50%;background:currentColor;content:""}
+.add-seat{display:grid;place-items:center;align-content:center;gap:6px;min-height:120px;border:1.5px dashed var(--line-strong);border-radius:var(--radius-lg);background:transparent;box-shadow:none;color:var(--muted);font-size:13px}
+.add-seat:hover{border-color:var(--accent-line);background:var(--accent-soft);color:var(--accent-strong)}
+.add-seat .icon{width:18px;height:18px}
+.seat-hint{margin:12px 2px 18px;color:var(--muted);font-size:var(--text-caption)}
+
+/* Moderator card. */
+.host-card{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:0 14px;padding:16px;border:1px solid var(--line);border-radius:var(--radius-lg);
+  background:linear-gradient(180deg,color-mix(in srgb,var(--moderator) 8%,transparent),transparent 96px),var(--surface);box-shadow:var(--inner-highlight),var(--elev-1);transition:border-color var(--dur-2) var(--ease-out)}
+.host-card.on{border-color:color-mix(in srgb,var(--moderator) 38%,var(--line))}
+.host-copy strong{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:14px}
+.host-copy small{display:block;margin-top:2px;color:var(--muted);font-size:var(--text-caption)}
+.host-settings{grid-column:1 / -1;display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px;align-items:start;margin-top:14px;padding-top:14px;border-top:1px solid var(--line);animation:cf-in var(--dur-3) var(--ease-out) both}
+
+/* Rules. */
+.cf-rules{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.rule-card{display:grid;align-content:start;gap:10px;margin:0;padding:14px 16px;border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--surface);box-shadow:var(--inner-highlight),var(--elev-1);font-size:13px;font-weight:400}
+.rule-title{font-size:13px;font-weight:650}
+.rule-note{color:var(--muted);font-size:var(--text-caption)}
+.rule-card .segmented{justify-self:start;max-width:100%}
+.switch-card{grid-template-columns:minmax(0,1fr) auto;align-items:center;cursor:pointer}
+.switch-card .rule-note{grid-column:1 / -1}
+.rule-card.limits{grid-column:1 / -1}
+.rule-card.limits>summary{display:flex;align-items:center;gap:8px;margin:0;padding:0;font-weight:600;list-style:none}
+.rule-card.limits>summary::-webkit-details-marker{display:none}
+.rule-card.limits>summary::after{width:7px;height:7px;margin-left:auto;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);content:"";transform:rotate(45deg);transition:transform var(--dur-2) var(--ease-out)}
+.rule-card.limits[open]>summary::after{transform:rotate(-135deg)}
+.rule-card.limits .grid-two{margin-top:12px}
+.create-page .settings-detail{display:block;margin-top:12px;padding:0}
+
+/* Launch bar: always in reach; it explains in one line why it cannot start yet. */
+.start-bar{position:sticky;bottom:0;z-index:5;margin:12px -24px -96px;padding:22px 24px 20px;background:linear-gradient(to top,var(--page) 58%,transparent)}
+.start-bar-inner{display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:10px 10px 10px 16px;border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--raised);box-shadow:var(--inner-highlight),var(--elev-3);transition:border-color var(--dur-2) var(--ease-out),box-shadow var(--dur-3) var(--ease-out)}
+.start-bar-inner.ready{border-color:var(--accent-line);box-shadow:var(--inner-highlight),var(--elev-3),0 0 0 3px var(--accent-glow)}
+.start-bar .seat-strip .seat-avatar{animation:cf-pop var(--dur-3) var(--spring) both}
+.start-bar .summary{flex:1;min-width:160px;color:var(--muted);font-size:var(--text-caption)}
+.start-bar .why{padding:5px 11px;border-radius:8px;background:var(--warning-bg);color:var(--warning);font-size:var(--text-caption);animation:cf-in var(--dur-2) var(--ease-out) both}
+.start-bar .primary{min-height:44px;padding:0 22px;font-size:14px}
+
+@media(max-width:899px){.preset-row{grid-template-columns:repeat(2,minmax(0,1fr))}.provider-picker{grid-column:1 / -1}.preset-row .preset-cancel{grid-column:1 / -1;justify-self:start}}
+@media(max-width:767px){
+  .create-page{padding:24px 14px 96px}
+  .cf-hero{margin-bottom:22px}
+  .cf-hero h1{font-size:24px}
+  .cf-seats,.cf-rules{grid-template-columns:1fr}
+  .cf-stage{padding:14px 16px 0}
+  .cf-stage-foot{margin-inline:-16px;padding-inline:16px}
+  .host-settings{grid-template-columns:1fr}
+  .connection-check ul{flex-basis:100%}
+  .connection-check>button{margin-left:auto}
+  .start-bar{margin-inline:-14px;padding-inline:14px}
+}

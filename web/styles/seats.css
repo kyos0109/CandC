@@ -1,0 +1,32 @@
+/* Seat identity: circle = AI seat, rounded square = moderator, filled = you. Later seats of one provider are outlined and numbered. */
+.icon{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.seat-avatar{position:relative;display:inline-grid;place-items:center;flex:none;width:32px;height:32px;border-radius:50%;background:var(--other-soft);color:var(--other);font-size:13px;font-weight:700;line-height:1}
+.seat-avatar.sm{width:22px;height:22px;font-size:11px}
+.seat-avatar.lg{width:40px;height:40px;font-size:15px}
+.seat-avatar.k-codex{background:var(--codex-soft);color:var(--codex)}
+.seat-avatar.k-claude{background:var(--claude-soft);color:var(--claude)}
+.seat-avatar.k-gemini{background:var(--gemini-soft);color:var(--gemini)}
+.seat-avatar.k-grok{background:var(--grok-soft);color:var(--grok)}
+.seat-avatar.alt{background:transparent;box-shadow:inset 0 0 0 1.5px currentColor}
+.seat-avatar.moderator{border-radius:10px;background:var(--moderator-soft);color:var(--moderator)}
+.seat-avatar.sm.moderator{border-radius:7px}
+.seat-avatar.me{background:var(--accent);color:var(--primary-text);font-size:12px}
+.seat-avatar.speaking{box-shadow:0 0 0 2px var(--page),0 0 0 4px var(--accent)}
+.seat-avatar.alt.speaking{box-shadow:inset 0 0 0 1.5px currentColor,0 0 0 2px var(--page),0 0 0 4px var(--accent)}
+.seat-avatar.muted{opacity:.55}
+.seat-badge{position:absolute;right:-5px;bottom:-5px;display:grid;place-items:center;width:15px;height:15px;border-radius:50%;background:var(--surface);color:var(--text);box-shadow:0 0 0 1.5px var(--page)}
+.seat-badge .icon{width:9px;height:9px;stroke-width:2.4}
+.seat-badge.ok{background:var(--ok);color:var(--page)}
+.seat-badge.mute,.seat-badge.alert{background:var(--warning-bg);color:var(--warning)}
+.seat-strip{display:flex;padding-left:6px}
+.seat-strip .seat-avatar{margin-left:-4px;box-shadow:0 0 0 2px var(--page)}
+.seat-strip .seat-avatar:first-child{margin-left:0}
+.seat-strip .seat-avatar.alt{box-shadow:inset 0 0 0 1.5px currentColor,0 0 0 2px var(--page)}
+.seat-strip .seat-avatar.speaking{z-index:2;box-shadow:0 0 0 2px var(--page),0 0 0 4px var(--accent)}
+.seat-strip .seat-avatar.alt.speaking{box-shadow:inset 0 0 0 1.5px currentColor,0 0 0 2px var(--page),0 0 0 4px var(--accent)}
+.chip{display:inline-flex;align-items:center;height:20px;padding:0 8px;border-radius:10px;background:var(--hover);color:var(--muted);font-size:11px;font-weight:600;white-space:nowrap}
+.chip.run{background:var(--accent-soft);color:var(--accent)}
+.chip.ok{background:color-mix(in srgb,var(--ok) 16%,transparent);color:var(--ok-text)}
+.chip.warn{background:var(--warning-bg);color:var(--warning)}
+.chip.moderator{background:var(--moderator-soft);color:var(--moderator)}
+

@@ -1,0 +1,48 @@
+# Daily AI performance measurement v1
+
+This disposable diagnostic stream observes ordinary user-started executions and turns. It never starts test inference, schedules work, retries requests, changes prompts, model/effort or research policy, or changes CLI process lifetime. App-server and official Claude CLI protocols remain the owners of inference. Controller/journal alone establish confirmed public storage.
+
+## Observation contract
+
+Version 3 rooms record the actual call purpose (`discussion`, `moderation`, `monitor`, `summary`) and an optional `participant` seat ID. These labels are independent of the adapter prompt purpose; observation never changes the prompt. Room start/resume records the existing readiness checks once, returns their verified CLI versions to the runtime, and observes the existing child spawn events without extra commands. Idempotent start retries emit no new execution boundaries; deferred admission retains the original monotonic acceptance time and lock wait.
+
+Room calls observe selection, prepared commit, filtered public streaming text, resolved session model, native usage/source, tool identities for counting only, cleanup and the existing result commit. A monitor has no public answer commit: its existing state/result commit supplies diagnostic commit timings and confirmed diagnostic storage. Successful monitor statistics require that confirmation and observed cleanup. External monitor cancellation is distinct from deadline timeout. A failure-handler write failure overrides the original error with storage uncertainty before the measurement ends, including legacy input-selection failures.
+
+The additive participant/purpose fields remain in the disposable v1 stream. Old records without participant remain readable as unknown identity and are not rewritten or joined to journal content for backfill. Their recorded purpose and missing timings remain unchanged. New report groups include participant; directional interpretation also requires known CLI/model labels, so the previously observed room records with unknown CLI do not support a direction even if counts grow.
+
+An injectable monotonic clock measures offsets and durations; UTC timestamps order records. `offsets` are cumulative milliseconds from the measurement's accepted boundary. Derived `durations` subtract named endpoints. Unobserved or reversed endpoints yield `null`. Durations overlap (for example RPC initialization can overlap spawn), so they must not be summed as exclusive buckets. Duplicate observations keep the first timestamp.
+
+Each accepted start/resume operation gets an `executionId`; each turn retains its `requestId`. Login/version checks and the model catalog are execution observations and are not copied into each turn. Actual preflight spawn events count in `preflightProcesses`. The operation's successful readiness check supplies per-provider CLI versions to subsequent turn labels; absent versions remain unknown.
+
+Turn phases cover input selection, existing prepared snapshot commit, research configuration, Codex inherited-config inspection spawn/read/cleanup, inference spawn, RPC initialization, policy checks, native session creation/resumption, local request send, first filtered public text, protocol completion, cleanup, public-answer commit, existing diagnostic commit and handling end. No extra journal commits are created. Claude cleanup timing includes its existing post-result process-exit validation. Failed protocols record the observed failure phase before successful finally cleanup can obscure it. Unconfirmed journal writes remain `storage-unknown` even when a public answer or model result was observed.
+
+Spawn counts use the owned child's `spawn` event. Spawn is not CLI readiness. Claude `init` is a local protocol observation, not proof that the upstream service received a request. `waitFirstReply` includes any CLI, network, queue, inference or tool delay between local send and filtered public text. `final-only` observations remain visible but are excluded from streaming first-reply percentiles. Cancellation, timeout, startup/protocol/cleanup errors and storage uncertainty remain distinct outcomes. Codex started/completed tool notifications with the same item identity count once; tool identities are not persisted.
+
+Records contain only IDs, validated model/version identifiers, effort, research, purpose, backend, new/resumed session, round/contribution position, serialized prompt character count, phase offsets, outcomes and usage/counts. Invalid or sensitive model/version metadata becomes unknown. Prompt text, answers, reasoning, tool arguments, native session IDs, paths, stderr, credentials and errors are excluded. Existing raw journal diagnostics remain available through their existing UI.
+
+`usage` preserves adapter-observed numeric provider fields with `usageSource`. Codex `cachedInputTokens` and `reasoningOutputTokens` are subsets of their corresponding totals; they are never added again. Claude input/output/cache counters retain their original names and semantics, including numeric `cache_creation` breakdown and `server_tool_use` counters when returned. Only these validated numeric telemetry fields are retained; arbitrary strings and unknown fields are excluded. Missing usage remains `null`. This does not cover every internal CLI model request or estimate subscription debits or billing.
+
+## Disposable storage
+
+The production entrypoint enables measurement by default; `CANDC_PERFORMANCE_ENABLED=0` disables all new observations without disabling retained-record reads or old journal diagnostics. Tests inject their own store or use the controller's disabled default.
+
+The store writes only begin/end boundaries to `.cache/performance/performance-v1.0.jsonl`, with older files `.1.jsonl` and `.2.jsonl`. Each file is capped at 10 MiB. Rotation validates absolute owned paths within the configured diagnostic directory and rejects linked diagnostic directories/files. It only unlinks the oldest owned file and renames the other two; it never recursively removes user data. There is no journal schema extension, migration, backfill, repair or diagnostic journal commit.
+
+The serial background queue holds at most 256 pending records. Overflow drops affected data (a rejected begin cannot later be admitted as a complete end). Write failure stops acceptance for that store instance. `available`, process-local dropped-boundary count, corrupt-record count and warnings are surfaced by reads; prior-process drop counts are unknown. Diagnostic I/O cannot reject or delay model scheduling or formal commits. Shutdown waits at most two seconds for this queue; a stalled in-flight write can finish later, but no new records are accepted. This stream provides no journal durability guarantee.
+
+Reads cover only retained files. A valid begin without end remains incomplete, with no inferred end time. Invalid lines are skipped and counted, never repaired; diagnostic read failures do not prevent journal/history loading. Healthy complete end records contain the full observation snapshot, including the accepted offset, even if an older begin rotated out. Retention and drop warnings limit coverage claims.
+
+## Authenticated read API and UI
+
+- `GET /api/discussions/:id/performance`: execution and turn snapshots, durations, actual inspection/inference spawn counts, data integrity and completeness.
+- `GET /api/performance/report?format=json|markdown`: retained daily baseline, defaulting to live only, with an attachment filename.
+
+Both endpoints inherit Host/Origin/session authentication, accept no file path and never launch a CLI. Opening input/call diagnostics mounts the performance panel, refreshes immediately and every five seconds, avoids overlapping reads, and stops polling when closed. Downloads do not invoke inference. Unknown usage/durations, final-only observations, incomplete data, dropped records and unconfirmed public storage remain explicit.
+
+## Baseline and interpretation
+
+Turn comparison groups use provider, participant seat, CLI version, resolved model, effort, research, purpose, new/resumed session and input buckets `<8000`, `8000–31999`, `>=32000` (unknown is separate). Execution/preflight summaries are separate. Every metric gives valid/missing counts and nearest-rank p50. p90 is `null` below 20 valid values. Success and failure metrics are separate; cancelled, timeout and incomplete turns never enter successful percentiles. A complete successful sample additionally needs observed cleanup and confirmed public-answer storage, or confirmed diagnostic storage for a monitor. Raw per-turn tokens, round/position and input sizes are included without mixing provider semantics.
+
+At least 20 complete successful turns and 3 discussions within the same comparison group, with known CLI version and model, are required for directional interpretation. Codex reuse investigation requires at least 20 observed preparation/ratio values, median inherited-inspection-to-session-end duration >=1000 ms, and median per-turn preparation/total ratio >=20%. This is an investigation threshold, not an estimated saving or an activation condition. Waiting/generation shares are observations only; they do not attribute delays to the provider. Input/token trends do not trigger context trimming. Fake and legacy journal diagnostics never enter the new live baseline. Zero live samples explicitly report insufficient data.
+
+Removing or disabling this module affects only disposable diagnostics. Formal history and existing storage/recovery semantics remain owned by their existing contract.

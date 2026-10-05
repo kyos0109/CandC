@@ -1,0 +1,54 @@
+/* Layout and theme tokens. Public reading content lives in reading.css. Grays carry a slight teal bias toward the accent. */
+:root{
+  --sans:"Segoe UI Variable Text","Segoe UI","Microsoft JhengHei UI","Microsoft JhengHei","PingFang TC","Noto Sans TC",system-ui,sans-serif;
+  --mono:"Cascadia Mono","Cascadia Code",Consolas,"SFMono-Regular",monospace;
+  font-family:var(--sans);font-synthesis:none;font-size:14px;line-height:1.6;color-scheme:light;-webkit-font-smoothing:antialiased;
+  --page:#f6f7f7;--sidebar:#eef1f1;--surface:#fff;--surface-soft:#f0f3f3;--raised:#fff;--bubble:#fff;--bubble-line:#e3e8e9;
+  --human-bubble:#e2efee;--human-line:#cfe3e1;--field:#fff;--text:#1e2427;--muted:#5e6a70;--faint:#606b71;
+  --line:#e1e6e7;--line-strong:#c9d1d3;--border:var(--line);--hover:#e9eded;
+  --accent:#17696b;--accent-soft:#e1efee;--accent-line:#8cbfbd;--primary:#17696b;--primary-text:#fff;
+  --codex:#1f7a78;--codex-soft:#dcefee;--claude:#a15c38;--claude-soft:#f6e6dc;--other:#4f5f80;--other-soft:#e6eaf3;
+  --gemini:#3a5fa3;--gemini-soft:#e3ebf8;--grok:#454f56;--grok-soft:#e6e9eb;--moderator:#6a4c93;--moderator-soft:#ece4f4;
+  --code:#f2f4f4;--warning-bg:#fbf1de;--warning:#7a5316;--danger:#a83a30;--ok:#2f8a5f;--ok-text:#236847;--run:#c08a2e;
+  --shadow:0 1px 2px rgb(20 40 40 / .06),0 8px 24px rgb(20 40 40 / .06);--shadow-sm:0 1px 2px rgb(20 40 40 / .05);--backdrop:rgb(15 25 25 / .35);
+  --chevron:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5 6 7.5 9 4.5' fill='none' stroke='%235e6a70' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  --reading-size:16px;
+}
+:root[data-theme=dark]{
+  color-scheme:dark;
+  --page:#131617;--sidebar:#0f1213;--surface:#1a1e20;--surface-soft:#20272a;--raised:#202628;--bubble:#1c2123;--bubble-line:#262d30;
+  --human-bubble:#1d3335;--human-line:#264244;--field:#15191a;--text:#e4e8e9;--muted:#9aa6ab;--faint:#8c989e;
+  --line:#262d30;--line-strong:#3a4448;--hover:#22292b;
+  --accent:#6cc3be;--accent-soft:#1a3133;--accent-line:#3f7c79;--primary:#6cc3be;--primary-text:#0d1f1f;
+  --codex:#7ccfcb;--codex-soft:#183536;--claude:#e3a27e;--claude-soft:#3a2a21;--other:#a9b6d6;--other-soft:#232a3a;
+  --gemini:#9db8ea;--gemini-soft:#1d2a40;--grok:#c4ced3;--grok-soft:#262d30;--moderator:#c7acea;--moderator-soft:#2b2238;
+  --code:#15191a;--warning-bg:#33291b;--warning:#ecc98f;--danger:#f0ada6;--ok:#6fcf9a;--ok-text:#6fcf9a;--run:#e0b25c;
+  --shadow:0 1px 2px rgb(0 0 0 / .3),0 10px 30px rgb(0 0 0 / .25);--shadow-sm:0 1px 2px rgb(0 0 0 / .3);--backdrop:rgb(0 0 0 / .5);
+  --chevron:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5 6 7.5 9 4.5' fill='none' stroke='%239aa6ab' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+@keyframes breathe{50%{opacity:.35}}
+
+/* Design tokens v2: type scale, radii, elevation and motion. Colour tokens above stay authoritative; nothing here redefines them. */
+:root{
+  interpolate-size:allow-keywords;
+  --text-display:28px;--text-title:20px;--text-heading:15px;--text-body:14px;--text-caption:12.5px;--text-micro:11.5px;
+  --radius-sm:6px;--radius-md:10px;--radius-lg:14px;--radius-xl:20px;
+  --dur-1:120ms;--dur-2:200ms;--dur-3:320ms;
+  --ease-out:cubic-bezier(.2,.8,.2,1);--spring:linear(0,.55 10%,.95 24%,1.06 38%,1.02 56%,1);
+  --accent-strong:#0f5557;--accent-glow:rgb(23 105 107 / .22);
+  --inner-highlight:inset 0 1px 0 rgb(255 255 255 / .7);
+  --elev-1:0 1px 2px rgb(20 40 40 / .06),0 1px 1px rgb(20 40 40 / .04);
+  --elev-2:0 2px 4px rgb(20 40 40 / .05),0 8px 20px rgb(20 40 40 / .08);
+  --elev-3:0 4px 8px rgb(20 40 40 / .06),0 18px 40px rgb(20 40 40 / .14);
+  --grad-primary:linear-gradient(180deg,color-mix(in srgb,var(--primary) 88%,#fff 12%),var(--primary));
+  --stage-tint:radial-gradient(120% 140% at 0% 0%,color-mix(in srgb,var(--accent) 7%,transparent),transparent 60%);
+}
+:root[data-theme=dark]{
+  --accent-strong:#8fd6d1;--accent-glow:rgb(108 195 190 / .24);
+  --inner-highlight:inset 0 1px 0 rgb(255 255 255 / .06);
+  --elev-1:0 1px 2px rgb(0 0 0 / .4);
+  --elev-2:0 2px 6px rgb(0 0 0 / .35),0 10px 24px rgb(0 0 0 / .3);
+  --elev-3:0 6px 12px rgb(0 0 0 / .4),0 22px 48px rgb(0 0 0 / .45);
+  --stage-tint:radial-gradient(120% 140% at 0% 0%,color-mix(in srgb,var(--accent) 9%,transparent),transparent 60%);
+}
+

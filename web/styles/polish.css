@@ -1,0 +1,34 @@
+/* Polish: soft elevation, quiet transitions, a visible focus halo on fields and gentle motion. Reduced motion switches the animations off above. */
+.surface-card,.roster-card{box-shadow:var(--shadow-sm)}
+button,.segmented span,.switch,.chip,.recipient-chips span,.history-item,.room-tab{transition:background-color var(--dur-1) ease,border-color var(--dur-1) ease,color var(--dur-1) ease,box-shadow var(--dur-1) ease,transform var(--dur-1) var(--ease-out),filter var(--dur-1) ease}
+button:active:not(:disabled){transform:scale(.975)}
+input:not([type=checkbox]):not([type=radio]):focus-visible,textarea:focus-visible,select:focus-visible{border-color:var(--accent-line);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 18%,transparent);outline:none}
+.composer:focus-within{box-shadow:var(--shadow),0 0 0 3px color-mix(in srgb,var(--accent) 12%,transparent)}
+.actions button .icon,.execution-actions .icon,.add-seat .icon{width:13px;height:13px}
+.stop-button .icon{color:var(--danger)}
+@keyframes fade-in{from{opacity:0}}
+@keyframes dock-in{from{opacity:0;transform:translateX(10px)}}
+@keyframes seat-pulse{50%{box-shadow:0 0 0 2px var(--page),0 0 0 6px color-mix(in srgb,var(--accent) 38%,transparent)}}
+@keyframes seat-pulse-alt{50%{box-shadow:inset 0 0 0 1.5px currentColor,0 0 0 2px var(--page),0 0 0 6px color-mix(in srgb,var(--accent) 38%,transparent)}}
+.inspector.docked,.inspector.overlay{animation:dock-in .22s ease-out}
+.drawer-backdrop,.room-page,.outcome-card,.message.pending{animation:fade-in .24s ease-out}
+.seat-avatar.speaking{animation:seat-pulse 1.8s ease-in-out infinite}
+.seat-avatar.alt.speaking{animation-name:seat-pulse-alt}
+
+@media(max-width:767px){
+  .room-subbar{flex-wrap:wrap;gap:0;padding:0 8px}
+  .room-tab{min-height:40px;height:40px;padding:0 10px}
+  .stage-topic{order:3;flex-basis:100%;min-height:36px;padding:0 6px;border-top:1px solid var(--line);border-left:0}
+  .room-event{justify-content:flex-start}
+  .room-event>span{flex:1 1 0}
+  .room-meter{display:none}
+  .stage-grant{margin:6px 12px 0}
+  .consensus-strip{width:calc(100% - 20px)}
+  .consensus-strip small{margin-left:0;width:100%}
+  .room-page-inner{padding:20px 14px 40px}
+  .recipient-row>span{display:none}
+}
+.stage-checkpoint-bar{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 16px;font-size:12px;color:var(--muted);flex-shrink:0}
+.stage-checkpoint-bar button{padding:4px 8px;white-space:nowrap}
+.stage-progress{overflow-wrap:anywhere}
+.stage-progress h4{margin:18px 0 8px}

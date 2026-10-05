@@ -1,0 +1,97 @@
+/* ModelPicker. Scoped to .model-picker; every motion and radius token has a fallback so it renders correctly before the shared tokens land. */
+.model-picker{--mp-ease:var(--ease-out,cubic-bezier(.2,.8,.2,1));--mp-fast:var(--dur-1,120ms);--mp-mid:var(--dur-2,200ms);--mp-slow:var(--dur-3,320ms);display:grid;gap:8px;min-width:0}
+.model-picker .mp-field{position:relative;min-width:0}
+
+/* Trigger: a field with a faint top sheen, an inner highlight and a glow ring while open or focused. */
+.model-picker .mp-trigger{position:relative;display:flex;align-items:center;gap:10px;width:100%;min-height:40px;padding:0 34px 0 12px;border:1px solid var(--line);border-radius:10px;
+  background:linear-gradient(180deg,color-mix(in srgb,var(--field) 90%,#fff 10%),var(--field));box-shadow:inset 0 1px 0 rgb(255 255 255 / .05),var(--shadow-sm);cursor:pointer;user-select:none;
+  transition:border-color var(--mp-fast),box-shadow var(--mp-mid),background var(--mp-fast)}
+.model-picker .mp-trigger:hover{border-color:var(--line-strong)}
+.model-picker .mp-trigger:focus-visible,.model-picker .mp-trigger.open{outline:none;border-color:var(--accent-line);box-shadow:inset 0 1px 0 rgb(255 255 255 / .05),0 0 0 3px color-mix(in srgb,var(--accent) 24%,transparent)}
+.model-picker .mp-trigger[aria-disabled=true]{cursor:not-allowed;background:var(--field);box-shadow:none;opacity:.62}
+.model-picker .mp-dot{flex:none;width:8px;height:8px;border-radius:50%;background:var(--dot,var(--accent));box-shadow:0 0 0 3px color-mix(in srgb,var(--dot,var(--accent)) 18%,transparent)}
+.model-picker .mp-text{display:flex;align-items:baseline;gap:8px;flex:1;min-width:0}
+.model-picker .mp-text b{overflow:hidden;font-size:13.5px;font-weight:620;letter-spacing:-.005em;text-overflow:ellipsis;white-space:nowrap}
+.model-picker .mp-text code,.model-picker .mp-opt-text code{overflow:hidden;color:var(--muted);font-size:11.5px;text-overflow:ellipsis;white-space:nowrap}
+.model-picker .mp-text em{overflow:hidden;color:var(--faint);font-size:13px;font-style:normal;text-overflow:ellipsis;white-space:nowrap}
+.model-picker .mp-tag{flex:none;padding:2px 7px;border-radius:999px;background:var(--surface-soft);color:var(--muted);font-size:11px;font-weight:600;line-height:1.5}
+.model-picker .mp-trigger>.icon{position:absolute;right:11px;width:14px;height:14px;color:var(--muted);transition:transform var(--mp-mid) var(--mp-ease),color var(--mp-fast)}
+.model-picker .mp-trigger:hover>.icon,.model-picker .mp-trigger.open>.icon{color:var(--text)}
+.model-picker .mp-trigger.open>.icon{transform:rotate(180deg)}
+.model-picker .mp-retry{position:absolute;top:50%;right:6px;display:grid;place-items:center;width:28px;min-height:28px;padding:0;border-color:transparent;background:transparent;color:var(--muted);transform:translateY(-50%)}
+.model-picker .mp-retry:hover{background:var(--hover);color:var(--text)}
+.model-picker .mp-retry:active{transform:translateY(-50%) scale(.94)}
+.model-picker .mp-retry .icon{width:14px;height:14px}
+.model-picker .mp-field:has(.mp-retry) .mp-trigger>.icon{display:none}
+
+/* Popover: raised surface, layered shadow, scales in from the trigger edge. */
+.model-picker .mp-pop{position:absolute;z-index:30;top:calc(100% + 6px);right:0;left:0;padding:5px;border:1px solid var(--line-strong);border-radius:12px;background:var(--raised);
+  box-shadow:inset 0 1px 0 rgb(255 255 255 / .04),0 14px 36px rgb(0 0 0 / .26),0 2px 8px rgb(0 0 0 / .14);transform-origin:top center;animation:mp-in var(--mp-mid) var(--mp-ease)}
+.model-picker .mp-pop.up{top:auto;bottom:calc(100% + 6px);transform-origin:bottom center;animation-name:mp-in-up}
+@keyframes mp-in{from{opacity:0;transform:translateY(-4px) scale(.98)}}
+@keyframes mp-in-up{from{opacity:0;transform:translateY(4px) scale(.98)}}
+.model-picker .mp-list{max-height:288px;margin:0;padding:0;overflow:auto;list-style:none;overscroll-behavior:contain;scrollbar-width:thin}
+.model-picker .mp-option{position:relative;display:grid;grid-template-columns:18px minmax(0,1fr);align-items:center;gap:8px;min-height:44px;padding:6px 10px;border-radius:8px;cursor:pointer;transition:background var(--mp-fast)}
+.model-picker .mp-option.active{background:var(--hover)}
+.model-picker .mp-option.active::before{position:absolute;top:9px;bottom:9px;left:0;width:2px;border-radius:2px;background:var(--accent);content:""}
+.model-picker .mp-option:active{background:var(--accent-soft)}
+.model-picker .mp-check{display:grid;place-items:center;color:var(--accent)}
+.model-picker .mp-check .icon{width:14px;height:14px}
+.model-picker .mp-option.selected .mp-check .icon path{stroke-dasharray:18;animation:mp-draw var(--mp-slow) var(--mp-ease) both}
+@keyframes mp-draw{from{stroke-dashoffset:18}}
+.model-picker .mp-opt-text{display:flex;flex-direction:column;min-width:0}
+.model-picker .mp-opt-text b{overflow:hidden;font-size:13.5px;font-weight:600;line-height:1.35;text-overflow:ellipsis;white-space:nowrap}
+.model-picker .mp-option.selected .mp-opt-text b{color:var(--accent)}
+.model-picker .mp-opt-text code{line-height:1.35}
+.model-picker .mp-sep{height:1px;margin:5px 10px;background:var(--line)}
+.model-picker .mp-option.custom .mp-opt-text{flex-direction:row}
+.model-picker .mp-option.custom b{color:var(--accent)}
+
+/* Custom id entry replaces the list inside the same popover. */
+.model-picker .mp-custom{display:grid;gap:8px;padding:6px 6px 4px}
+.model-picker .mp-custom label{margin:0;color:var(--muted);font-size:11.5px;font-weight:600;letter-spacing:.04em}
+.model-picker .mp-custom input.mp-input{min-height:38px;margin:0;font-family:var(--mono);font-size:12.5px}
+.model-picker .mp-custom input.mp-input:focus{outline:none;border-color:var(--accent-line);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 24%,transparent)}
+.model-picker .mp-custom-actions{display:flex;gap:8px;justify-content:flex-end}
+.model-picker .mp-custom-actions button{min-height:32px;padding:0 12px;font-size:12.5px}
+.model-picker .mp-ghost{border-color:transparent;background:transparent;color:var(--muted)}
+.model-picker .mp-apply{border-color:var(--primary);background:var(--primary);color:var(--primary-text);transition:filter var(--mp-fast),transform var(--mp-fast)}
+.model-picker .mp-apply:hover:not(:disabled){background:var(--primary);filter:brightness(1.08)}
+.model-picker .mp-apply:active:not(:disabled){transform:scale(.97)}
+.model-picker .mp-scrim{display:none}
+
+/* Effort: one segmented control; the thumb slides between equal-width cells. */
+.model-picker .mp-effort{position:relative;display:grid;grid-template-columns:repeat(var(--n,3),minmax(0,1fr));min-height:36px;padding:3px;border:1px solid var(--line);border-radius:10px;background:var(--surface-soft);box-shadow:inset 0 1px 2px rgb(0 0 0 / .08)}
+.model-picker .mp-thumb{position:absolute;top:3px;bottom:3px;left:3px;width:calc((100% - 6px) / var(--n,3));border-radius:7px;background:var(--raised);
+  box-shadow:0 1px 2px rgb(0 0 0 / .2),0 0 0 1px var(--line-strong),inset 0 1px 0 rgb(255 255 255 / .06);transform:translateX(calc(var(--i,0) * 100%));
+  transition:transform var(--mp-mid) var(--mp-ease),opacity var(--mp-fast)}
+.model-picker .mp-effort[data-empty] .mp-thumb{opacity:0}
+.model-picker .mp-effort label{position:relative;display:grid;place-items:center;min-height:28px;margin:0;border-radius:7px;color:var(--muted);cursor:pointer;font-family:var(--mono);font-size:12px;font-weight:600;line-height:1;transition:color var(--mp-fast)}
+.model-picker .mp-effort label:hover{color:var(--text)}
+.model-picker .mp-effort input{position:absolute;inset:0;margin:0;opacity:0;cursor:inherit}
+.model-picker .mp-effort label:has(input:checked){color:var(--text)}
+.model-picker .mp-effort label:has(input:focus-visible){outline:2px solid var(--accent);outline-offset:-2px}
+.model-picker .mp-effort label:has(input:disabled){opacity:.45;cursor:not-allowed}
+.model-picker .mp-effort.static{display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:12px;font-weight:600}
+
+/* Narrow or touch screens: the list becomes a bottom sheet over a scrim. */
+@media (max-width:767px),(pointer:coarse){
+  .model-picker .mp-scrim{position:fixed;inset:0;z-index:29;display:block;background:var(--backdrop);animation:mp-fade var(--mp-mid) var(--mp-ease)}
+  .model-picker .mp-pop,.model-picker .mp-pop.up{position:fixed;z-index:31;top:auto;right:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));left:12px;border-radius:16px;transform-origin:bottom center;animation:mp-sheet var(--mp-slow) var(--mp-ease)}
+  .model-picker .mp-list{max-height:min(60vh,360px)}
+  .model-picker .mp-option{min-height:52px}
+}
+@keyframes mp-fade{from{opacity:0}}
+@keyframes mp-sheet{from{opacity:0;transform:translateY(24px)}}
+
+/* Provider picker: a compact pill that reuses the popover and option styles above. */
+.model-picker.pp{display:block;flex:none}
+.model-picker.pp .mp-trigger{width:auto;min-height:36px;gap:8px;padding:0 30px 0 11px}
+.model-picker.pp .mp-text b{font-size:13px}
+.model-picker.pp .mp-pop{right:0;left:auto;min-width:252px}
+.model-picker .pp-status{flex:none;width:6px;height:6px;border-radius:50%}
+.model-picker .pp-status.ok{background:var(--ok)}
+.model-picker .pp-status.warn{background:var(--run)}
+.model-picker .pp-option{grid-template-columns:18px 22px minmax(0,1fr)}
+.model-picker .mp-opt-text code.warn{color:var(--warning)}
+.model-picker .pp-option code{font-family:var(--sans);font-size:12px}
