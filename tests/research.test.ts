@@ -1,18 +1,20 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { mkdtemp, mkdir, writeFile, readFile, rm, symlink } from 'node:fs/promises';
 import path from 'node:path';
+import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { ReadOnlyResearch, isPublicAddress, validateRoots, fetchPublicPage } from '../src/research.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 
 describe('read-only research boundaries', () => {
+  const fixtureParent = path.resolve(tmpdir());
   let directory: string;
   let research: ReadOnlyResearch;
   const sensitiveDirectories = ['.kube', '.docker', '.gnupg', '.azure'];
   const sensitiveFiles = ['.npmrc', '.git-credentials', '.netrc', 'id_rsa', 'id_rsa.backup', 'id_ed25519', 'id_dsa', 'id_ecdsa', 'ID_RSA_COPY'];
   beforeAll(async () => {
-    directory = await mkdtemp(path.resolve('tests/research-fixture-'));
+    directory = await mkdtemp(path.join(fixtureParent, 'candc-research-fixture-'));
     await writeFile(path.join(directory, 'notes.txt'), 'Recovery takes 30 seconds.\npassword=fixture-secret\nCost is bounded.');
     await writeFile(path.join(directory, '.env'), 'API_KEY=fixture');
     await writeFile(path.join(directory, 'binary.dat'), Buffer.from([0,1,2]));
@@ -26,7 +28,7 @@ describe('read-only research boundaries', () => {
     await writeFile(path.join(directory, 'nested/id_rsa.backup'), 'credential-fixture-marker');
     research = new ReadOnlyResearch(await validateRoots([directory]));
   });
-  afterAll(async () => { if (directory && path.dirname(directory) === path.resolve('tests')) await rm(directory, { recursive: true, force: true }); });
+  afterAll(async () => { if (directory && path.dirname(directory) === fixtureParent && path.basename(directory).startsWith('candc-research-fixture-')) await rm(directory, { recursive: true, force: true }); });
   it('reads numbered lines, redacts secrets and records a verifiable hash', async () => {
     const result = await research.read(0, 'notes.txt');
     expect(result.text).toContain('1: Recovery'); expect(result.text).not.toContain('fixture-secret'); expect(result.sha256).toHaveLength(64);

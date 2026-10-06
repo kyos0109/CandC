@@ -46,9 +46,11 @@ export type RoomMessage = z.infer<typeof roomMessageSchema>;
 const referenceSchema = z.object({ messageId: z.uuid(), disposition: z.enum(['addressed', 'unresolved', 'checked']), reason: z.string().max(4000) }).strict();
 const sessionSchema = z.object({ id: z.string().min(1), model: z.string(), backend: z.enum(['fake', 'live']), generation: z.uuid(),
   delivered: z.array(z.uuid()), configurationVersion: z.number().int().nonnegative() }).strict();
+const metadataDiagnosticSchema = z.enum(['work-schema', 'work-reference', 'work-limit', 'references-schema', 'references', 'delivery-schema', 'review-schema', 'proposal-reference', 'unsupported-action', 'control-schema', 'delivery-repair-limit']);
 const callSchema = z.object({ id: z.uuid(), participant: participantSchema, provider: providerSchema, generation: z.uuid(),
   sessionId: z.string().nullable(), nativeSessionId: z.string().nullable(), taskVersion: z.number().int().positive(),
   grantId: z.uuid().nullable(), purpose: z.enum(['discussion', 'moderation', 'monitor', 'summary']),
+  openingSpeaker: seatIdSchema.optional(),
   messages: z.array(z.uuid()), topic: z.string(), goal: z.string(), constraints: z.string(), task: z.string(),
   settings: roomSettingsSchema, payloadHash: z.string(), characters: z.number().int().nonnegative(),
   draft: z.object({ turnId: z.uuid(), text: z.string(), through: z.number().int().nonnegative() }).strict().nullable(),
@@ -57,6 +59,7 @@ const callSchema = z.object({ id: z.uuid(), participant: participantSchema, prov
   references: z.array(referenceSchema).max(100).default([]),
   researchPerformed: z.boolean().optional(),
   controlDiagnostic: z.enum(['envelope', 'json', 'schema', 'task-version', 'grant', 'references', 'workflow-reference', 'workflow-limit']).optional(),
+  metadataDiagnostics: z.array(metadataDiagnosticSchema).max(11).optional(),
 }).strict();
 export type RoomCall = z.infer<typeof callSchema>;
 export const moderatorActionSchema = z.discriminatedUnion('type', [
@@ -79,9 +82,12 @@ export const roomControlSchema = z.object({ version: z.literal(3), taskVersion: 
     z.object({ type: z.literal('confirm'), proposalId: z.uuid(), review: conclusionReviewSchema.optional() }).strict()]),
 }).strict();
 export type RoomControl = z.infer<typeof roomControlSchema>;
+export type MetadataDiagnostic = z.infer<typeof metadataDiagnosticSchema>;
+const proposalSchema = z.object({ id: z.uuid(), author: seatIdSchema, taskVersion: z.number().int().positive(), result: z.string(), dissent: z.array(z.string()), unresolved: z.array(z.string()), confirmed: z.array(seatIdSchema), delivery: deliverySchema.optional(),
+  reviews: z.array(conclusionReviewSchema.extend({ actor: seatIdSchema, callId: z.uuid() }).strict()).max(4).optional() }).strict();
 const roomRuntimeSchema = z.object({ taskVersion: z.number().int().positive(), configurationVersion: z.number().int().positive(),
   deliveryVersion: z.literal(1).optional(),
-  conclusionRequest: z.object({ target: participantSchema, reason: z.string().min(1).max(16_000) }).strict().nullable().optional(),
+  conclusionRequest: z.object({ target: participantSchema, reason: z.string().min(1).max(16_000), kind: z.enum(['repair', 'review']).optional() }).strict().nullable().optional(),
   currentSpeaker: seatIdSchema.nullable(), contributions: z.number().int().nonnegative(), moderatorCalls: z.number().int().nonnegative(),
   muted: z.array(seatIdSchema), grant: z.object({ id: z.uuid(), target: seatIdSchema, task: z.string(), version: z.number().int().positive(), taskKey: z.string().optional() }).strict().nullable(),
   workflow: workflowSchema.optional(),
@@ -90,8 +96,8 @@ const roomRuntimeSchema = z.object({ taskVersion: z.number().int().positive(), c
   pendingTopic: z.object({ commandId: z.uuid(), oldTitle: z.string(), title: z.string(), reason: z.string() }).strict().nullable(),
   topicHistory: z.array(z.object({ title: z.string(), version: z.number().int().positive(), reason: z.string() }).strict()),
   outcome: z.object({ authority: z.enum(['moderator', 'participants']), result: z.string(), dissent: z.array(z.string()), unresolved: z.array(z.string()), unhandledRequests: z.array(z.uuid()).default([]), delivery: deliverySchema.optional() }).strict().nullable(),
-  proposal: z.object({ id: z.uuid(), author: seatIdSchema, taskVersion: z.number().int().positive(), result: z.string(), dissent: z.array(z.string()), unresolved: z.array(z.string()), confirmed: z.array(seatIdSchema), delivery: deliverySchema.optional(),
-    reviews: z.array(conclusionReviewSchema.extend({ actor: seatIdSchema, callId: z.uuid() }).strict()).max(4).optional() }).strict().nullable(),
+  proposal: proposalSchema.nullable(),
+  interimResults: z.array(proposalSchema.extend({ unhandledRequests: z.array(z.uuid()) }).strict()).max(4_000).optional(),
   operations: z.array(z.object({ id: z.uuid(), fingerprint: z.string() }).strict()), sourceDiscussionId: z.uuid().nullable(),
   uncertainBudgetMs: z.number().nonnegative(),
 }).strict();
@@ -122,6 +128,7 @@ export const roomStateSchema = roomInputSchema.safeExtend({ id: z.uuid(), sequen
   const callIds = new Set<string>(), ownership = new Map<string, ParticipantId>();
   for (const c of state.room.calls) {
     if (!ids.has(c.participant)) { fail('Unknown call participant.'); continue; }
+    if (c.openingSpeaker && (c.participant !== 'moderator' || c.purpose !== 'moderation' || !state.participants.some(p => p.id === c.openingSpeaker))) fail('Invalid opening speaker or owner.');
     if (callIds.has(c.id)) fail('Duplicate call identity.'); callIds.add(c.id);
     const provider = c.participant === 'moderator' ? state.moderator!.provider : state.participants.find(p => p.id === c.participant)!.provider;
     if (provider !== c.provider) fail('Call provider differs from its owner.');
@@ -145,6 +152,16 @@ export const roomStateSchema = roomInputSchema.safeExtend({ id: z.uuid(), sequen
   if (state.room.deliveryVersion === 1 && proposal && !proposal.delivery) fail('Proposal without delivery assessment.');
   if (state.room.deliveryVersion === 1 && state.room.outcome?.authority === 'participants' &&
       (!proposal || proposal.taskVersion !== state.room.taskVersion || state.participants.some(p => !proposal.confirmed.includes(p.id)) || state.room.outcome.result !== proposal.result || state.room.conclusionRequest)) fail('Outcome without a fully reviewed current proposal.');
+  const stages = state.room.interimResults ?? [];
+  if (new Set(stages.map(p => p.id)).size !== stages.length) fail('Duplicate interim result.');
+  for (const p of stages) {
+    if (!seats.has(p.author) || p.taskVersion > state.room.taskVersion || !p.delivery ||
+        p.confirmed.length !== state.participants.length || new Set(p.confirmed).size !== state.participants.length || p.confirmed.some(id => !seats.has(id)) ||
+        !state.room.calls.some(c => c.id === p.id && c.participant === p.author && c.purpose === 'discussion' && c.status === 'completed' && !c.controlDiagnostic && !c.metadataDiagnostics?.includes('control-schema') && c.taskVersion === p.taskVersion) ||
+        p.confirmed.some(id => id !== p.author && !p.reviews?.some(r => r.actor === id && r.adequate && r.gaps.length === 0)) ||
+        p.reviews?.length !== state.participants.length - 1 || p.reviews?.some(r => !seats.has(r.actor) || r.actor === p.author || !state.room.calls.some(c => c.id === r.callId && c.participant === r.actor && c.purpose === 'discussion' && c.status === 'completed' && !c.controlDiagnostic && !c.metadataDiagnostics?.includes('control-schema') && c.taskVersion === p.taskVersion)) ||
+        new Set(p.reviews?.map(r => r.actor)).size !== p.reviews?.length || p.unhandledRequests.some(id => messages.get(id)?.sender !== 'user')) fail('Interim result without complete peer-review provenance.');
+  }
   if (state.room.commands.some(c => 'target' in c.action && !seats.has(c.action.target))) fail('Unknown command target.');
   if (state.room.pendingTopic && !state.room.commands.some(c => c.id === state.room.pendingTopic!.commandId && c.action.type === 'topic' && !c.applied)) fail('Pending topic without notification command.');
   if (state.room.outcome?.authority === 'moderator' && !state.moderator) fail('Outcome without moderator.');
@@ -161,6 +178,7 @@ export const roomStateSchema = roomInputSchema.safeExtend({ id: z.uuid(), sequen
 export type RoomDiscussion = z.infer<typeof roomStateSchema> & { storage?: { status: 'unconfirmed'; reason: string }; v2?: undefined };
 export type RoomSession = z.infer<typeof sessionSchema>;
 export type RoomPrompt = { actor: ParticipantId; provider: ProviderId; taskVersion: number; grantId: string | null;
+  openingSpeaker?: ParticipantId;
   deliveryVersion?: 1 | undefined; conclusionRequest?: RoomDiscussion['room']['conclusionRequest'];
   moderatorMode?: 'facilitator' | 'judge';
   discussionKind?: RoomInput['kind'];
@@ -184,14 +202,44 @@ function roomBoundary(text: string): number {
   }
   return boundary;
 }
-export function parseRoomAnswer(text: string): { text: string; control: RoomControl | null; diagnostic?: 'envelope' | 'json' | 'schema' } {
+const controlIdentitySchema = z.object({ version: z.literal(3), taskVersion: z.number().int().positive(), grantId: z.uuid().nullable() });
+export function parseRoomAnswer(text: string): { text: string; control: RoomControl | null; diagnostic?: 'envelope' | 'json' | 'schema'; metadataDiagnostics?: MetadataDiagnostic[]; fallbackIdentity?: z.infer<typeof controlIdentitySchema> } {
   const boundary = roomBoundary(text);
   const match = /(?:^|\n)<<<CANDC_CONTROL_V3>>>\s*\n([^]*?)\n<<<END_CANDC_CONTROL_V3>>>\s*$/.exec(text);
   if (!match || boundary < 0 || boundary !== match.index + (match[0].startsWith('\n') ? 1 : 0)) return { text: roomPreview(text), control: null, diagnostic: 'envelope' };
   let value: unknown;
   try { value = JSON.parse(match[1]!); } catch { return { text: text.slice(0, match.index).trimEnd(), control: null, diagnostic: 'json' }; }
+  // Only the observed placement error is repaired. Unknown fields, conflicting
+  // nested data, invalid identities and inappropriate actions still fail strictly.
+  if (value && typeof value === 'object' && !Array.isArray(value) && Object.hasOwn(value, 'delivery')) {
+    const input = value as Record<string, unknown>, action = input.action;
+    if (action && typeof action === 'object' && !Array.isArray(action) && !Object.hasOwn(action, 'delivery') &&
+      ((action as Record<string, unknown>).type === 'propose' || (action as Record<string, unknown>).type === 'finish')) {
+      const { delivery, ...rest } = input;
+      value = { ...rest, action: { ...action, delivery } };
+    }
+  }
+  const metadataDiagnostics: MetadataDiagnostic[] = [];
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const input = { ...value } as Record<string, unknown>;
+    // Optional reports can fail without granting authority or accepting a result.
+    if (Object.hasOwn(input, 'work') && !workReportSchema.safeParse(input.work).success) { delete input.work; metadataDiagnostics.push('work-schema'); }
+    if (Object.hasOwn(input, 'references') && !z.array(referenceSchema).max(100).safeParse(input.references).success) { delete input.references; metadataDiagnostics.push('references-schema'); }
+    const a = input.action;
+    if (a && typeof a === 'object' && !Array.isArray(a)) {
+      const action = { ...a } as Record<string, unknown>;
+      if ((action.type === 'propose' || action.type === 'finish') && Object.hasOwn(action, 'delivery') && !deliverySchema.safeParse(action.delivery).success) { delete action.delivery; metadataDiagnostics.push('delivery-schema'); }
+      if (action.type === 'confirm' && Object.hasOwn(action, 'review') && !conclusionReviewSchema.safeParse(action.review).success) { delete action.review; metadataDiagnostics.push('review-schema'); }
+      input.action = action;
+    }
+    value = input;
+  }
   const parsed = roomControlSchema.safeParse(value);
-  return parsed.success ? { text: text.slice(0, match.index).trimEnd(), control: parsed.data } : { text: text.slice(0, match.index).trimEnd(), control: null, diagnostic: 'schema' };
+  if (parsed.success) return { text: text.slice(0, match.index).trimEnd(), control: parsed.data, ...(metadataDiagnostics.length ? { metadataDiagnostics } : {}) };
+  // Only identity is recoverable. The controller must verify it against the owned
+  // call before replacing all actions, continuation and claims with neutral control.
+  const identity = controlIdentitySchema.safeParse(value);
+  return { text: text.slice(0, match.index).trimEnd(), control: null, diagnostic: 'schema', ...(identity.success ? { fallbackIdentity: identity.data } : {}) };
 }
 export function roomPreview(text: string) {
   const index = roomBoundary(text); let result = index < 0 ? text : text.slice(0, index);

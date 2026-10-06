@@ -1,132 +1,199 @@
 # CandC
 
-A local discussion room with two to four speaker agents and an optional independent moderator. Providers run in owned background processes; existing desktop chats are not controlled or reused. Codex and Claude have the established live path. Gemini and Grok have protocol adapters and demonstration seats, but their live path remains locked until installed CLI subscription authentication and effective tool isolation are validated.
+**Bring independent AI perspectives into one local discussion room.**
 
-## Start on Windows
+> **Implementation status (2026-10-06):** This revision includes reviewed interim
+> results in auto/manual mode, the facilitator's first opening, neutral control fallback
+> and related prompt/UI/export changes with regression tests. See the
+> [implementation comparison](docs/IMPLEMENTATION_STATUS.md) for changes from `30c2511`
+> and the limits of deterministic and live-model validation.
 
-1. Install Node.js 24 and the official Codex and Claude CLIs.
-2. Log in with `codex login` and `claude auth login` using existing subscriptions. Never paste credentials into CandC.
-3. Double-click `Start-CandC.cmd`. It installs locked dependencies if needed, builds the application, starts a hidden backend, and opens `http://127.0.0.1:4317`.
-4. Select **真實 AI**, enter a topic, explicitly choose each model and reasoning effort, and create a discussion. Select **示範** to try the interface without sending AI messages.
-5. Double-click `Stop-CandC.cmd` to cancel active turns and shut down the backend. History remains on disk. Closing the browser alone pauses after the current answer once the last client has been disconnected for 15 seconds.
+CandC is a Windows-first app for discussing a question with **2–4 AI speaker seats**
+and an optional independent moderator. Set a topic, compare arguments, add your own
+constraints and review the resulting answer in a browser. Codex and Claude run through
+owned background CLI processes; each seat has its own session and workspace, including
+seats using the same provider. Existing desktop chats are not reused.
 
-If port 4317 is occupied by phase-one CandC, close that older terminal with Ctrl+C first. The launcher does not kill another process. `CANDC_PORT` selects another port; use the same value for start and stop.
+![CandC overview: a user supplies a topic to independent speaker seats; an optional moderator coordinates public discussion; reviewed results retain dissent and unknowns.](docs/images/discussion-overview.svg)
 
-Terminal alternative:
+*Conceptual overview, not a product screenshot. Speakers take turns; the diagram does
+not imply simultaneous speaker generation. Peer review records agreement on the answer,
+not independent verification of its facts.*
+
+**Windows · Node.js 24 · Local single-user app · Codex + Claude live · MIT handwritten code**
+
+[Quick start](#quick-start-on-windows) · [How it works](#how-a-discussion-works) ·
+[User guide](docs/USER_GUIDE.md) · [Development](CONTRIBUTING.md) · [Security](SECURITY.md)
+
+## What can you do with it?
+
+- **Compare an engineering decision.** Give seats the same goal and constraints, then
+  ask them to examine tradeoffs, challenge assumptions and retain unresolved risks.
+- **Explore a topic together.** Use joint analysis without assigning opposing positions;
+  contribute new information while the discussion develops.
+- **Run a structured debate.** Assign each speaker an explicit stance. Speakers may revise
+  a position when justified; the app does not require forced disagreement or minimum rounds.
+- **Review an answer before accepting it.** Another seat reviews the exact proposal for
+  missing requested content. Results retain dissent, limitations and unknowns.
+- **Keep the discussion inspectable.** Read original messages, reviewed results and
+  diagnostics separately; export saved content as Markdown or JSON.
+
+For example, discuss: “Which approach should we use for a small internal service?”
+Supply the expected workload, operating environment and maintenance constraints, then
+assign implementation and reliability perspectives to different seats. This is a
+suggested use case, not a measured claim about model quality.
+
+## Quick start on Windows
+
+You need Node.js **24.x**. Live mode also needs the official CLI and subscription login
+for each selected provider. **Demo mode needs no provider login** and uses scripted
+replies without live AI or network research.
+
+1. For live Codex/Claude seats, install their official CLIs and sign in in a terminal:
+
+   ```powershell
+   codex login
+   claude auth login
+   ```
+
+   Never paste credentials into CandC. You only need the CLI for the providers you use;
+   you do not need to keep a CLI terminal open.
+2. From this project directory, run **`Start-CandC.cmd`**. It installs locked dependencies
+   if needed, builds the app, starts a hidden backend and opens
+   [http://127.0.0.1:4317](http://127.0.0.1:4317).
+3. Choose **Demo / 示範** for a first look, or **Live AI / 真實 AI** for real inference.
+   Enter the topic, configure the seats and choose an execution mode. Live seats need
+   explicitly selected available models and effort settings.
+4. Create the discussion. In manual mode, choose **Continue discussion / 繼續討論**
+   after each round; use the Conversation, Conclusion and Diagnostics tabs to inspect it.
+5. Run **`Stop-CandC.cmd`** to cancel owned turns and stop the backend. Saved history remains.
+
+For a terminal launch:
 
 ```powershell
-cd C:\Projects\CandC
 npm ci --ignore-scripts
 npm run dev
-# Open http://127.0.0.1:4317
 ```
 
-## Discussion workflow
+`dev` and the launcher replace normal build outputs. For development verification
+that preserves those outputs, use `npm run build:isolated`.
 
-New discussions default to behavior version 3. Arrange 2–4 speaker seats. Each seat picks its own provider (Codex, Claude, Gemini or Grok), so one AI can hold several seats, each with an independent session, workspace and private input. The moderator is off by default. Enabling it adds one separate agent, session and generation workspace, even when its provider/model matches a speaker. Ordinary facilitation is the default: speakers lead first, a brief coordination call follows each round, and all speakers must explicitly confirm the same proposal before a formal result. The facilitator cannot stop, mute, narrow/change the topic or decide a result. A separate unchecked **主持人裁判模式** option enables forced intervention and unilateral rulings. Only judges monitor public drafts; checks are serialized and sampled at most once per ten seconds. A stale draft decision cannot affect a later grant. Accepted interruption durably revokes the grant, cancels the owned process tree and waits for cleanup before scheduling another speaker. Partial output remains visibly cancelled and excluded from confirmed history; the cancelled native session is retired.
+Repeated start opens the running compatible instance; repeated stop reports that it is
+already stopped. The launcher does not kill another process occupying the port. An
+occupied port without a compatible health response is an error; shutdown succeeds only
+once the listener closes. `CANDC_PORT` changes the port; match start and stop.
 
-The moderator receives public messages only. Directed user input, private evidence and speaker instructions are excluded from its prompt, receipts and snapshots, including summaries. An ordinary facilitator receives public proposal/confirmation data to present the speakers' result. A speaker's public reply is public even when it responds to directed input. Judge topic changes first save and publish the old/new topic and reason, then apply at an idle boundary. The original goal and constraints stay fixed; changing them requires a user configuration action. Uncertainty between notification and application leaves an explicit pending topic that needs recovery and resolution. Judge completion is labeled a moderator decision, preserving dissent, unresolved items and user requests without an explicit response claim. It is not presented as unanimous agreement. Without a judge, including ordinary facilitation, all configured speakers must confirm the same proposal to establish a participants' result. Delivery receipts and response claims remain separate; neither proves model understanding or factual correctness. Idle Settings can change authority mode, preserving history and rebuilding sessions without starting a call; omitted-mode old journals select ordinary authority on their next explicit start without being rewritten during loading.
+## How a discussion works
 
-Manual version 3 pauses after one contribution per configured speaker count. Each call saves the eligible incremental input snapshot first. Moderator calls have a configurable lifetime budget (default 500); overlapping moderator/speaker time counts once toward elapsed time. Summaries use fresh independent sessions and do not complete a discussion. Missing control saves the public answer then pauses; an uncertain provider turn requires explicit session reconstruction. Storage uncertainty blocks subsequent writes and all provider scheduling until durable recovery.
+1. **Define the task.** Enter a topic, optional goal and constraints. Configure 2–4
+   seats, joint analysis or debate, execution mode, speaking order and limits.
+2. **Exchange arguments.** One speaker generates at a time. You can send public input
+   or direct a private message to one seat. Public answers remain visible to the room.
+3. **Review the proposed answer.** Speakers review the same proposal. Missing requested
+   content prompts correction; silence and message delivery do not count as agreement.
+4. **Keep the appropriate result.** Execution mode determines whether a reviewed
+   participant result is an interim record or a final outcome.
 
-New browser rooms enable the generic active discussion policy. Prompts describe roles and evidence/coordination boundaries; speakers choose useful lines of inquiry, respond to peers and may agree, disagree or revise positions without a mandatory decision framework or predetermined answer. Ordinary facilitation uses a brief role prompt and leaves substance to speakers. Pending personal questions are deduplicated and do not automatically stop other useful work. The conclusion tab retains provisional answers, reasons, dissent, unknowns and sources even without a formal outcome; malformed control has a specific safe diagnostic. Existing version 3 rooms can enable the policy explicitly in Settings, which also permits idle research changes for live Codex/Claude rooms. Research remains opt-in and disabled research tasks stay pending; the moderator's own lack of tools does not prohibit authorized speaker research. Session rebuilding preserves history and never starts a turn automatically. Manual boundaries, user stop, limits and durable storage barriers still apply. See [the active-policy contract](docs/ROOM_CONTRACT.md#active-discussion-policy-v1) and [evaluation boundaries](docs/DISCUSSION_POLICY_EVAL.md); fixture checks do not prove improved live reasoning or an optimal policy.
+| Execution mode | What happens after a round or reviewed participant result? | Useful when |
+| --- | --- | --- |
+| **Manual / 手動** | Pauses after one speaker-count round. Reviewed results are interim results; you choose when to continue. | Inspect and steer each round. |
+| **Automatic / 自動** | Continues useful discussion within limits. Reviewed interim results do not automatically end the room. | Further analysis with bounded execution. |
+| **Until conclusion / 有結論就停** | Stops when all configured speakers confirm the same reviewed proposal. A partial result remains labeled partial. | An explicitly reviewed final answer. |
 
-The two-agent creation form was removed: the browser creates version 3 discussions only (the version 2 creation API remains for compatibility and tests, and new discussions can no longer enable focused issues). Old version 1/2 histories keep their original execution, display and export behavior. **另建多人討論（保留原紀錄）** explicitly creates a version 3 discussion with confirmed completed history, scoped directed recipients and a source link; it never edits the source journal or reuses its sessions. See [ROOM_CONTRACT.md](docs/ROOM_CONTRACT.md) for protocol and readiness limits.
+An optional **facilitator** gives a brief neutral opening before the first speaker,
+then coordinates public exchanges. It cannot impose a result. Explicit **judge mode**
+permits intervention and labeled unilateral rulings; that authority is separate from
+participant agreement and can finish a room in any execution mode.
 
-Debates offer explicit supporting/opposing side selectors. Choosing a side for one provider assigns the opposite side to its peer. Optional persona and style instructions remain attached to their provider when sides change. Leave them blank for the default evidence-based debate. Creating a preset debate does not call a provider to invent positions; review and confirm the saved positions before starting. Existing custom roles remain editable, and the explicit re-proposal action is still available.
+Disagreement or an honest inability to determine an answer can be a complete response
+to the requested question. Missing requested content remains partial. Neither peer
+confirmation nor a completed label proves that the underlying facts are true.
 
-The discussion uses one conversation timeline: all AI bubbles share the left alignment; user messages align right. Small labeled avatars, restrained bubbles and linked eligible quotations identify participants and reply targets. Author, optional role label (debate side or fixture role) and time sit above each bubble; reply actions, the details toggle and the quiet saved marker share one action row separated from the content by a hairline. Day and round dividers come only from saved timestamps and round numbers; they do not infer hand-offs. Only the conversation pane scrolls; controls, input and the pause/completion notice remain visible. New answers follow the latest text while the reader is near the bottom. Scrolling up suspends following and exposes a return-to-latest button when new content arrives. Bubble layout does not shorten message text. AI output and in-progress previews support GFM tables, task lists, strikethrough, links and fenced code. A narrowly scoped inline repair handles leftover Chinese bold delimiters next to punctuation; escaped delimiters and code remain literal. Raw HTML is not executed and external images remain links. Wide tables/code scroll inside the bubble.
+## A room you can read and steer
 
-Version 2 discussions (created before the multi-seat flow) use behavior version 2: each provider's native session receives eligible messages and source/hash evidence versions not already recorded in its confirmed delivery receipt. Its own committed answers are recorded in that receipt and are not resent. A fresh or explicitly rebuilt session receives the complete eligible history. Opening answers remain independent and directed input remains restricted to its recipient. Every call saves a fixed input snapshot before launching the provider. The actual serialized prompt is capped at 1,000,000 characters; an oversized input pauses before calling, without truncation or automatic summarization. Delivery proves the application submitted the recorded input, not that the model answered it or retained every detail after native compaction.
+| Area | What you will find |
+| --- | --- |
+| **Conversation / 對話** | Original messages, seat identity, directed input and execution controls. Long replies fold without truncating saved content. |
+| **Conclusion / 結論** | Proposals under review, reviewed interim results, final outcomes, dissent, gaps, topic history and exports. |
+| **Diagnostics / 診斷** | Call and delivery details, rejected optional claims, blocking control errors and performance observations. |
+| **Settings / 設定** | Idle configuration changes, execution limits, moderator authority and task settings. |
+| **Reading settings / Aa** | Light/dark themes, 14/16/18px text, comfortable/compact density, full/highlight reading and interface language. |
 
-Histories without an explicit behavior version remain version 1. Their full-context sending, evidence window, conclusion rules, display and export continue under the legacy contract. Opening a history does not upgrade it. **升級為新討論** creates a new version 2 discussion linked to its source, without changing the source journal or inferring old delivery receipts.
+Traditional Chinese is the default interface. Open **Aa → Language / 語言 → English**
+to switch; the browser remembers the choice. Drafts, recipients and reading settings
+are preserved. User text, model answers and evidence keep their original language;
+switching does not invoke translation or rewrite saved content.
 
-Codex model selection is an explicit dropdown populated from the installed CLI catalog. Selecting a model resets reasoning effort to a supported value. If the catalog is unavailable, model selection stays disabled rather than guessing a model.
+See the [user guide](docs/USER_GUIDE.md) for privacy, result states, pause/stop and recovery.
 
-Claude uses the same native dropdown interaction, populated with its CLI aliases. Choose the custom model option to enter a complete model identifier; normal alias selection requires no typing. Changing the Claude selection resets its reasoning effort to medium. Both providers must have a model selected before creating a live discussion.
+## Provider support and practical limits
 
-Version 2 keeps one current issue. A conclusion, explicit disagreement or blocking condition is first a versioned proposal; only the other provider can confirm that exact proposal version. Confirmation can close an issue without completing the discussion. Automatic/conclusion mode selects the next pending issue at a safe boundary; manual mode retains its contribution-pair pause. Overall completion needs a separate public result and peer confirmation, no active/pending issues, and no unhandled user requests. Skipped issues remain result limitations. Silence, missing information, stale metadata and two independent proposals do not establish agreement. These records capture provider claims and checks, not independent proof that a conclusion is true.
+| Provider | Live execution | Demo seats |
+| --- | --- | --- |
+| Codex | Supported, subject to CLI/login/model readiness | Supported |
+| Claude | Supported, subject to CLI/login/model readiness | Supported |
+| Gemini | Locked pending CLI authentication and tool-isolation validation | Supported |
+| Grok | Locked pending CLI authentication and tool-isolation validation | Supported |
 
-In a version 1 history, **有結論就停** retains the legacy conclusion proposal and peer-message confirmation rules.
+There is no API-key fallback. Live calls use the selected provider's subscription login
+and are subject to its limits. `npm run doctor` reports sanitized CLI readiness without
+starting a model turn. Demo illustrates application behavior with scripted replies;
+it does not establish real model quality or live-provider compatibility.
 
-- **共同分析**: opening answers are independent; subsequent contributions share completed arguments. Free conversation lets providers request continuation or wait. Alternating mode preserves the original speaker rotation.
-- **不同立場**: select opposing positions and confirm them before beginning the debate. The optional re-proposal action asks Codex in a separate provider session.
-- **手動**: finish a pair of contributions, then wait for another user command. **自動**: keep discussing until both providers wait, the user pauses/stops, or a limit is reached. Switching to manual takes effect at the next completed pair.
-- **加入討論**: send an intervention to both providers or one provider. Sending automatically resumes a ready/paused discussion after its roles are confirmed, including manual mode. A currently executing answer retains its existing input; subsequent turns receive the new intervention. Unconfirmed/edited debate roles require confirmation first. If execution limits or another guard prevent resuming, the intervention remains saved and the interface explains why. Press Enter to send, Shift+Enter to insert a line break; IME composition does not submit. The input grows with its content, and sent user text preserves literal symbols and line breaks.
-- **本次回覆後暫停**: finish the current speaker and pause. **立即停止**: cancel the owned process tree, preserve partial output as cancelled, and do not create a summary automatically.
-- **整理結論**: Codex drafts a summary, then Claude checks it. These are independent fresh sessions; the ordinary discussion sessions remain unchanged.
-- **重建工作階段並續談**: version 2 retires all old session generations and builds fresh sessions from confirmed history on the next explicit start. It retains discussion/issue identity, elapsed budget, contribution count and limits. Unobserved prepared calls conservatively reserve their saved timeout budget; diagnostics label this as unknown-duration budget, not measured execution time. An uncertain turn is never automatically replayed. Version 1 retains **重建並續談**, which creates a new manual discussion and carries elapsed time, round numbering and configured limits. A carried exhausted budget requires an explicit limit increase.
-- **匯出**: download Markdown or JSON. History survives page reloads and backend restarts.
+CandC targets a **trusted local single-user workspace**. Only one discussion can run
+at a time across supported behavior versions. New browser discussions use version 3;
+version 1/2 histories keep their original behavior. Opening an old history never upgrades
+it; explicit upgrade creates a new discussion and preserves the source journal.
 
-Defaults: 50 rounds, four hours total elapsed execution, ten minutes per answer. Change limits before creating a discussion or while idle. Paused wall time is not counted. Role proposal and summary time also contribute to elapsed execution. Version 2 retains all eligible evidence versions and sends their unseen delta; it does not apply a latest-record window. Version 1 retains its 1,000,000 message-text-character guard and latest-12-evidence prompt window. Both retain full displayed/exported public history.
+## Research, privacy and durable history
 
-**重點閱讀** and **完整閱讀** are browser preferences. Highlights collapse details only when a public answer contains one reliable, standalone `## Details`, `## 細節` or `## 詳細說明` boundary with meaningful text on both sides. Short, unsegmented or ambiguous output stays complete. Tables, code, links and all stored text remain available. Source jumps expand and focus the original answer. **引用追問** and **請另一方檢查** prepare a draft with a message reference; they do not call a model until the user sends it. Reading changes never create a summary or change delivery receipts.
+Research is **off by default**. Enabling it allows selected speakers to access permitted
+public HTTPS content and authorized local text roots through a bounded read-only gateway.
+Authorized content may be sent to those providers. The gateway blocks credentials,
+escaping paths and private network destinations, and records redacted evidence. Filtering
+is not complete data-loss prevention; review roots before enabling access.
+The moderator currently has no research tools. See [SECURITY.md](SECURITY.md).
 
-## Read-only research
+Directed input is visible only to its addressed speaker, including when another seat
+uses the same provider. The moderator sees public discussion. A speaker's public reply
+to private input is still public; use that boundary when choosing what to send.
 
-Research is off by default for new discussions. Enable it explicitly to allow public web search and access to selected local roots. Existing discussions retain their saved setting. Public web search is provided by each CLI. Four CandC MCP tools list authorized files, read bounded text, perform bounded literal searches, and fetch public HTTPS text. Selected roots are passed to both providers; retrieved content may be sent to their services.
+History lives in `data/` unless `CANDC_DATA_DIR` is set. CLI authentication stays in
+provider-owned locations. If saving is unconfirmed, further writes and AI scheduling
+stop. Recovery/rebuilding never automatically retries an unknown-result turn.
 
-- Only specific local directories are accepted. Drive roots, network drives, UNC paths, escaping junctions/symlinks, alternate streams, credentials and application-state directories are denied.
-- Blocked names include `.kube`, `.docker`, `.gnupg`, `.azure`, `.npmrc`, `.git-credentials`, `.netrc`, and `id_rsa*`, `id_dsa*`, `id_ecdsa*`, `id_ed25519*` key files, including copies outside `.ssh`. Blocking applies to listing, reading, searching and root selection.
-- Binary files and files over 1 MiB are denied. Each read is limited to 300 lines and 32,000 characters. Search covers at most 2,000 entries, the first 300 lines per file, and 100 matches. Listings show at most 250 entries.
-- HTTPS fetches pin a public DNS result and recheck redirects. Private, loopback and link-local destinations, cookies, URL credentials and non-443 ports are rejected. Only bounded text bodies are accepted.
-- Successfully retrieved tool content is redacted and recorded with a SHA256 hash, source, timestamp and truncation marker. Provider web-search links remain provider claims unless separately fetched. CandC does not assert that every cited link was verified.
-- Secrets are filtered using common token and assignment patterns, including complete quoted values. File reads redact the whole bounded file before selecting lines, preserving line numbers even inside private-key blocks. This is not complete data-loss prevention or a general YAML/configuration parser: review roots before authorizing their contents.
+| Setting | Purpose |
+| --- | --- |
+| `CANDC_PORT` | Change the local listener port; match start and stop. |
+| `CANDC_DATA_DIR` | Select the history directory. |
+| `CANDC_CODEX_HOME` | Select an explicit Codex home. |
+| `CANDC_CODEX_PATH`, `CANDC_CLAUDE_PATH` | Select explicit provider executables. |
+| `CANDC_PERFORMANCE_ENABLED=0` | Disable disposable performance collection under `.cache/performance/`. |
 
-Codex reads the effective configuration without starting a model turn, then disables every inherited MCP server in the actual inference process. It verifies read-only sandboxing, approval policy, disabled shell/browser/computer/hooks/plugins/agents/memory features and the MCP allowlist before sending. Claude uses safe mode with zero tools when research is off, or restricted settings plus the explicit CandC tool allowlist when on. Its init tool inventory and actual tool calls are checked. Managed enterprise CLI policies still apply; do not interpret CandC as an OS sandbox for malicious local configuration or executables.
+Performance diagnostics observe user-started turns without additional inference.
+Missing measurements remain unknown. Offline journal compaction requires a stopped
+server and preserves backups; see the [user guide](docs/USER_GUIDE.md#storage-and-maintenance)
+and [performance contract](docs/PERFORMANCE_CONTRACT.md).
 
-## Runtime contract
+## Documentation and development
 
-Validated protocol versions: **Codex CLI 0.160.0** and **Claude Code 2.1.287**. Live execution fails closed on different versions until revalidated. Codex model/effort combinations are checked against its current model catalog. Claude accepts explicit model IDs or documented aliases; resolved model IDs are saved in session metadata. Neither adapter enables automatic fallback. Provider entitlement or limits may still cause a turn to fail.
+| Document | Read it for |
+| --- | --- |
+| [User guide](docs/USER_GUIDE.md) | Room setup, everyday operation, results and recovery. |
+| [Implementation status](docs/IMPLEMENTATION_STATUS.md) | Implemented changes from the historical baseline and validation limits. |
+| [Room contract](docs/ROOM_CONTRACT.md) | Authoritative version 3 scheduling, privacy, authority and persistence rules. |
+| [Interface contract](docs/UI_UX_SPEC.md) | Implemented reading, layout and localization behavior. |
+| [Discussion policy evaluation](docs/DISCUSSION_POLICY_EVAL.md) | Policy assertions, regression owners and evidence limits. |
+| [Focused contract](docs/FOCUSED_CONTRACT.md) | Legacy version 1/2 behavior. |
+| [AGENTS.md](AGENTS.md) / [Contributing](CONTRIBUTING.md) | Code ownership, change boundaries and canonical checks. |
+| [Validation](VALIDATION.md) | Dated observed checks and untested limits; not a guarantee about every later working tree. |
+| [Security](SECURITY.md) | Trust boundary, research access and reporting. |
 
-CandC uses the user's existing Codex home explicitly, because a desktop-launched process can otherwise resolve a different home. `CANDC_CODEX_HOME`, `CANDC_CODEX_PATH`, and `CANDC_CLAUDE_PATH` allow explicit paths. No credentials are copied into project files. CLI session files remain in provider-owned locations. `CANDC_DATA_DIR` changes application history storage, default `data/`.
+The handwritten code is MIT licensed. Generated Codex declarations retain upstream
+Apache-2.0 terms; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
-Storage format and discussion behavior are separate versions. Version 1 discussions use compact storage records version 2; version 2 discussions use compact records version 3 with nested issue/call/receipt patches. Immutable messages and evidence are stored once; snapshots refer to their IDs and content versions, while mutable configuration/task fields are fixed in the snapshot. Message/evidence events reference stored content. Replay reconstructs full states and events for history, exports and SSE. Legacy full-state and compact version 2 records remain readable; there is no automatic bulk migration.
-
-For offline compaction, stop CandC, run `npm run build`, then `node scripts/compact-journals.mjs`, and start CandC again. The maintenance script refuses to proceed if the configured local port is listening. It verifies exact state/event replay, writes and syncs a gzip backup of each changed original, verifies the replacement, and atomically replaces the journal. Backups stay beside the journals as `*.jsonl.backup-*.gz`. To roll back with the server stopped, decompress the selected backup over its matching `.jsonl`; doing so reverts any later changes in that discussion, so preserve the current journal first. Compaction does not shorten messages or remove history.
-History is recovered from `.jsonl` journals; legacy `.json` snapshots are no longer read or written. After any ambiguous append, sync or close failure, a per-discussion storage barrier stops further journal writes, evidence commits, catch/finally updates and model scheduling. Queries and transient SSE report **保存狀態待確認**. Restart does not resend a turn. Explicit recovery rereads the journal exclusively, verifies sequence/content/commit identity where available, and requires sync plus close before clearing the barrier. A valid prefix with an incomplete tail requires the separate **備份並修復不完整尾端** action; it syncs a gzip backup before removing only that invalid tail. Recovery preserves confirmed history and then requires explicit session rebuilding. It does not guess a result from a message ID, missing record, middle corruption or conflicting commit.
-
-Invalid middle records or sequence/content conflicts are preserved and appear as storage warnings in the interface and `.cache/server-error.log`; healthy histories still load. A damaged journal with no confirmed prefix cannot be reconstructed by CandC. Filesystem access errors can still fail startup. These recovery checks establish what the operating system confirms at the time of validation, not a hardware durability guarantee or support for concurrent writers. Stop CandC before offline maintenance.
-
-Before installing a release, back up history with CandC stopped. An older program may reject journals written by this release, including new storage version 3 records. To roll back, stop the current program, preserve the current journals separately, restore the complete pre-upgrade data backup and the matching old build, then verify history before starting inference. Restoring only old executables is not a supported data rollback; newer answers must remain preserved separately. See [the focused contract](docs/FOCUSED_CONTRACT.md) for versions, recovery and diagnostics.
-
-Only one discussion executes at a time. The server binds to `127.0.0.1`, validates Host/Origin, and checks an HttpOnly SameSite=Strict session cookie or bearer token on protected API routes. These checks restrict browser-origin access; any local process able to reach `/api/session` can obtain a session. CandC assumes a trusted local machine and does not isolate different OS users. There is no remote exposure feature. Active sessions stay subscribed when viewing other history. Streaming displays public text only, not private reasoning. Native session creation/resumption and turn protocol are separate from process lifetime; this release still cleans up each owned CLI process after its turn. A complete answer, session identity, receipt, call outcome and issue action become confirmed in one journal commit only after successful protocol completion and cleanup. Windows cancellation terminates the owned process tree; unconfirmed cleanup prevents session reuse.
-
-## Validation and development
-
-The 232px history sidebar sorts and groups discussions by last saved activity (today, yesterday, last 7 days, earlier) with a status dot per item and the CLI connection state at its foot; it collapses on desktop and opens as a drawer below 768px. The combined discussion header shows the history toggle, name, status pill, participant avatar stack, Aa, the overflow menu, and keeps immediate stop and pause-after-current-answer visible during execution. One current-issue row, with issue position, round progress against the round limit and elapsed against total time, sits above the independently scrolling conversation and composer. The composer chooses recipients with a 雙方 / Codex / Claude segmented control. Issues, participants, reading, settings, sources, connection and diagnostics share one inspector: a 320px dock at widths of at least 1280px, an overlay with Escape/focus containment/return below that. Aa contains persistent light/dark, 14/16/18px text and highlights/full reading preferences; the default reading size is 16px with 1.72 line height. Theme neutrals carry a slight teal bias; secondary and caption text meet at least 4.5:1 contrast on every surface they use. Opening panels or preparing reply drafts never starts inference.
-
-New discussion creation has one heading, a topic card with optional goal/constraints and name under **補充條件**, and three steps on one page. Step 1 is the topic. Step 2 lists every provider's readiness, offers presets (two seats, three-way review, one AI with several viewpoints, four seats plus moderator), one row per seat (name, provider, explicit model and effort, and a position or angle that is required only when debating) and a moderator card. The "one AI with several viewpoints" preset asks which provider to repeat and assumes none. Step 3 is the settings list: reply source, discussion form, run mode and speaker flow as segmented controls, research as a switch (off by default), and editable limits behind their summary. A sticky summary bar shows the seats and the single reason start is unavailable, with a link to the connections page. **更多討論操作** opens discussion settings, renaming, summary, complete exports, limits and links to sources/diagnostics. The participants inspector retains debate-role confirmation. A multi-seat room has Conversation, Conclusion and Diagnostics tabs. The header shows a seat strip (speaking ring, mute badge) and the participants roster stays docked at widths of at least 1280px (a drawer below, remembered when closed). Seat identity is a provider colour plus a glyph; later seats of one provider are outlined and numbered (`C1`, `C2`), the moderator is a rounded square. Moderator grants, mutes, interruptions and topic notices appear as one-line events; routine monitoring (`observe`) is counted in the roster and listed in diagnostics only. A recipient chip row states, before sending, who can read a private message (never the moderator or other seats, including another seat of the same provider). The Conclusion tab shows a participants' consensus or a moderator ruling with dissent, unresolved items and unanswered requests. The connections page lists each provider's readiness, version and login command. Seat IDs are independent of providers (`codex`, `codex-2`); Gemini and Grok seats stay demonstration-only until their live validation (see ROOM_CONTRACT.md).
-
-New discussions default to version 2, focused discussion, manual mode and free conversation. Automatic and conclusion modes require explicit selection; existing discussions retain their saved mode. After independent opening answers, each provider can continue, yield or wait. The scheduler permits consecutive contributions, gives the peer an opportunity after three consecutive contributions when both participate, and pauses when both wait or a provider yields to a waiting peer. The round budget permits at most two contributions per configured round, regardless of speaker. Version 2 requires valid versioned control metadata: a missing/invalid required block saves the successful public answer and delivery, then pauses. Optional response annotations are independent; missing/invalid annotations leave response status unmarked without discarding valid control. Legacy missing scheduling metadata still yields to the peer.
-
-```powershell
-npm run doctor       # sanitized version and login diagnosis
-npm run typecheck    # backend/frontend static checks
-npm test             # unit/integration tests with isolated fixture history
-npm run build:isolated # backend/frontend build under .cache/verification
-npm run test:e2e     # browser workflows against a separate fake-only fixture server
-```
-
-`npm run check` remains the release command combining typechecks, tests and the normal build; it replaces `dist/` and `web-dist/`. Use the isolated sequence above when preserving a running build. `CANDC_VERIFY_DIR` may select another child of `.cache/`. The build helper applies a 60-second timeout to each compiler/bundler.
-
-The browser suite needs Playwright-compatible Chromium. `CANDC_SCREENSHOT_DIR` and `CANDC_E2E_OUTPUT_DIR` can place evidence outside the repository. Global teardown verifies `testFixture: true` before authenticating and calling the existing shutdown endpoint; this avoids the managed Windows taskkill teardown failure. Set `CANDC_BROWSER_PATH` if the default local Chromium path differs. `CANDC_FIXTURE_PORT` overrides fixture port 4399. The fixture builds isolated outputs and uses fresh `.cache/e2e-*` history; it never calls live providers and refuses server reuse. Application history is not test data. `node scripts/verify-rollback.mjs <baseline-commit>` verifies old/new reader compatibility against disposable histories after an isolated build.
-
-`scripts/live-smoke.mjs` sends one harmless identifier message per provider and writes `.cache/live-smoke-report.json`. Run only after explicit authorization; it consumes real subscription usage. It disables research and reads no project data. Do not include it in automated tests. Adapters do not record raw CLI stderr.
-
-Source layout: `src/controller.ts` owns scheduling and commit boundaries; `src/focused.ts` owns version 2 input selection and issue control; `src/v2-contract.ts` owns its strict schemas; `src/store.ts` owns journal replay and recovery; `src/adapters/` owns provider protocols and cleanup; `src/research.ts` and `src/mcp.ts` own bounded access; `web/` owns the interface. Codex request types are pinned under `src/generated/codex/`. Run `npm run protocol:generate` before a deliberate version update.
-
-See `VALIDATION.md` for checks actually completed and remaining live validation limits.
-
-## Daily AI performance diagnostics
-
-The source entrypoint collects performance observations only during ordinary user-started discussions. Open **更多討論操作 → 輸入與呼叫診斷** for execution/turn stage durations, provider usage, sample counts and completeness warnings. The panel refreshes every five seconds while open. JSON/Markdown baseline downloads default to retained live samples; insufficient samples do not produce an optimization claim. No additional model requests or scheduled benchmarks are created.
-
-Diagnostic begin/end records use a bounded background queue and three 10 MiB files under `.cache/performance/`. They are disposable and separate from formal journals. `CANDC_PERFORMANCE_ENABLED=0` disables new collection. Unknown stages/usage stay unknown; model completion never proves saved public history. Existing journal diagnostics remain readable. See [the performance contract](docs/PERFORMANCE_CONTRACT.md) for timing definitions, privacy fields, retention and interpretation thresholds. This source change does not replace an already-running build.
-
-
-## Display names and UI compatibility
-
-An optional 120-character `displayName` is separate from the complete topic, public input, provider prompts and task/configuration versions. Blank or absent names show the first nonempty topic line, with full original content in settings/issues. Renaming uses authenticated `PATCH /api/discussions/:id/display-name` with `{ displayName, expectedVersion }`; the expected version is `displayVersion ?? 0`. It uses the existing exclusive commit/storage barrier, requires idle execution, persists one metadata change and increments only the display version/journal sequence. Identical normalized names are a no-op. Receipts, call snapshots, issue proposals/confirmations, overall completion and budgets remain unchanged. Explicit names carry into legacy reconstruction/upgrade; version 2 rebuild keeps the same discussion metadata. Opening old histories does not rewrite them.
-
-The current reader accepts histories without these optional fields. The pre-UI strict reader rejects journals that contain the new fields. For a complete rollback, stop CandC, preserve the newer journals separately and restore the matching pre-change history backup and build. Do not strip fields or rewrite user histories as an implicit migration. A UI-only rollback can retain the updated backend/schema; the old interface simply displays the topic. This delivery does not replace any runtime build or migrate user data.
+`npm run export:public` creates a scanned source-only directory and hashed manifest
+under `.cache/`, including these docs and the SVG overview. It excludes private data,
+credentials, dependencies, build outputs and Git history. It does not publish or rewrite
+this repository. Review the export before creating a public repository. Windows CI uses
+fake providers.

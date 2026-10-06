@@ -94,8 +94,11 @@ describe('active discussion policy deterministic acceptance (not live reasoning 
     } : { completedTasks: [{ key: 'lookup-facts', sources: [r.messageId] }] })), undefined, observed);
     const s = await ctx.run({ moderator: null, backend: 'live', research: true });
     expect(s.room.workflow?.tasks[0]?.status).toBe(observed ? 'completed' : 'pending');
-    expect(s.room.calls.at(-1)?.controlDiagnostic).toBe(observed ? undefined : 'workflow-reference');
-    expect(s.room.calls.at(-1)?.researchPerformed === true).toBe(observed);
+    const researcher = s.room.calls.find(c => c.participant === 'claude' && c.purpose === 'discussion')!;
+    expect(researcher.controlDiagnostic).toBeUndefined();
+    expect(researcher.metadataDiagnostics?.includes('work-reference') ?? false).toBe(!observed);
+    expect(researcher.researchPerformed === true).toBe(observed);
+    expect(s.room.contributions).toBeGreaterThanOrEqual(2);
   });
   it('user stop aborts an active turn and never schedules a checkpoint or another speaker', async () => {
     let enter!: () => void; const entered = new Promise<void>(resolve => { enter = resolve; });
@@ -132,7 +135,11 @@ describe('active discussion policy deterministic acceptance (not live reasoning 
       return diagnostic === 'envelope' ? 'An already generated answer.' : diagnostic === 'json' ? 'Answer\n' + ROOM_CONTROL_START + '\n{bad secret=private-token}\n' + ROOM_CONTROL_END : diagnostic === 'schema' ? good.replace('"type":"none"', '"type":"unexpected"') : diagnostic === 'task-version' ? good.replace('"taskVersion":1', '"taskVersion":999') : good.replace(/"grantId":"[^"]+"/, '"grantId":"' + randomUUID() + '"');
     });
     const s = await ctx.run({ moderator: null }); expect(s.room.calls[0]?.status).toBe('completed');
-    expect(s.room.calls[0]?.controlDiagnostic).toBe(diagnostic); expect(s.room.workflow?.checkpoint?.kind).toBe('analysis');
+    if (diagnostic === 'schema') {
+      expect(s.room.calls[0]?.controlDiagnostic).toBeUndefined(); expect(s.room.calls[0]?.metadataDiagnostics).toContain('control-schema');
+      expect(s.room.contributions).toBe(s.participants.length * s.limits.maxRounds);
+    } else expect(s.room.calls[0]?.controlDiagnostic).toBe(diagnostic);
+    expect(s.room.workflow?.checkpoint?.kind).toBe('analysis');
     expect(s.room.outcome).toBeNull(); expect(s.pauseReason).not.toContain('private-token');
   });
   it('rejects private source IDs in shared metadata, saves the public answer, and preserves prior workflow', async () => {
@@ -140,8 +147,11 @@ describe('active discussion policy deterministic acceptance (not live reasoning 
     const ctx = await setup(r => privateId && r.room!.actor === 'codex' ? response(r, { type: 'none' }, report(r, { questions: [{ key: 'leak', text: 'Private question.', reason: '', sources: [privateId] }] })) : fakeRoomResponse(r));
     const first = await ctx.run({ moderator: null, mode: 'manual' }); privateId = randomUUID();
     await ctx.controller.send(first.id, privateId, 'PRIVATE-SOURCE-FIXTURE', 'codex'); await ctx.controller.start(first.id, randomUUID()); await ctx.controller.wait(first.id);
-    const s = ctx.controller.get(first.id); expect(s.room.calls.at(-1)?.controlDiagnostic).toBe('workflow-reference'); expect(s.room.workflow?.questions).toHaveLength(0);
+    const s = ctx.controller.get(first.id), rejected = s.room.calls.findLast(c => c.participant === 'codex' && c.purpose === 'discussion')!;
+    expect(rejected.controlDiagnostic).toBeUndefined(); expect(rejected.metadataDiagnostics).toContain('work-reference'); expect(s.room.workflow?.questions).toHaveLength(0);
+    expect(s.room.contributions).toBe(first.room.contributions + 2);
     expect(JSON.stringify(s.room.workflow)).not.toContain('PRIVATE-SOURCE-FIXTURE');
+    expect(JSON.stringify(ctx.requests.filter(r => r.room?.actor === 'claude'))).not.toContain('PRIVATE-SOURCE-FIXTURE');
   });
   it('resolves a pending question only with a visible completed user message', async () => {
     let answered = false;
@@ -189,19 +199,20 @@ describe('control parsing diagnostics', () => {
 });
 
 describe('facilitator and explicitly authorized judge modes', () => {
-  it('defaults to speaker-led discussion, has no monitor, and presents only a speaker-confirmed result', async () => {
+  it('opens briefly before speaker-led discussion, has no monitor, and presents only a speaker-confirmed result', async () => {
     const ctx = await setup(); const s = await ctx.run({ moderatorMode: undefined, mode: 'conclusion' });
-    expect(ctx.requests.slice(0, 2).map(r => r.room!.actor)).toEqual(['codex', 'claude']);
+    expect(ctx.requests.slice(0, 3).map(r => r.room!.actor)).toEqual(['moderator', 'codex', 'claude']);
+    expect(s.room.calls[0]?.openingSpeaker).toBe('codex');
     expect(s.room.outcome?.authority).toBe('participants'); expect(s.room.proposal?.confirmed).toEqual(['codex', 'claude']);
     expect(s.room.calls.filter(c => c.purpose === 'monitor')).toHaveLength(0);
-    expect(s.room.calls.filter(c => c.participant === 'moderator')).toHaveLength(1);
+    expect(s.room.calls.filter(c => c.participant === 'moderator')).toHaveLength(2);
     expect(s.room.sessions.moderator!.id).not.toBe(s.room.sessions.codex!.id);
     const prompt = JSON.parse(buildPrompt(ctx.requests.at(-1)!));
     expect(prompt.policy).toContain('ordinary facilitator'); expect(prompt.policy).toContain('at most two short sentences');
     expect(prompt.controlPolicy).toContain('Facilitator actions: observe; speak');
     expect(prompt.controlPolicy).not.toContain('finish {'); expect(prompt.controlPolicy).not.toContain('pause {');
     expect(prompt.discussionPolicy).toBeUndefined(); expect(prompt.proposal.confirmed).toHaveLength(2);
-    expect(JSON.parse(buildPrompt(ctx.requests[0]!)).discussionPolicy).toContain('no fixed decision framework');
+    expect(JSON.parse(buildPrompt(ctx.requests[1]!)).discussionPolicy).toContain('no fixed decision framework');
   });
   it.each<RoomControl['action']>([
     { type: 'pause', reason: 'Premature pause.' }, { type: 'finish', result: 'One-sided ruling.', dissent: [], unresolved: [] },
@@ -241,7 +252,7 @@ describe('facilitator and explicitly authorized judge modes', () => {
     expect(await readFile(file)).toEqual(bytes);
     await reloaded.start(id, randomUUID()); await reloaded.wait(id);
     expect(reloaded.get(id).moderatorMode).toBe('facilitator');
-    expect(ctx.requests[0]?.room?.actor).toBe('codex'); await reloaded.close();
+    expect(ctx.requests.slice(0, 2).map(r => r.room!.actor)).toEqual(['moderator', 'codex']); await reloaded.close();
   });
   it('changes authority only while idle with a version check, retires sessions, and preserves history without auto-start', async () => {
     const ctx = await setup(); const s = await ctx.run({ moderatorMode: undefined, mode: 'manual' }); const requests = ctx.requests.length;

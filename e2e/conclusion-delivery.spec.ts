@@ -19,7 +19,7 @@ async function create(page: Page, mode: string, manual = false) {
   await page.reload(); await page.getByRole('tab', { name: /^結論/ }).click(); return id;
 }
 
-test('a work-list draft is rejected, revision becomes the displayed answer, and stage history stays secondary across reload and mobile', async ({ page }) => {
+test('a work-list draft is rejected and manual revision becomes a reviewed interim answer across reload and mobile', async ({ page }) => {
   const errors: string[] = []; page.on('pageerror', e => errors.push(e.message));
   const id = await create(page, 'revision', true);
   await expect(page.getByText('這份文字只有未來工作，沒有交付使用者要求的答案。', { exact: true })).toBeVisible();
@@ -28,13 +28,13 @@ test('a work-list draft is rejected, revision becomes the displayed answer, and 
   expect((await (await page.request.post('/api/discussions/' + id + '/start', { data: { operationId: crypto.randomUUID() } })).json()).status).toBe('running');
   await expect.poll(async () => (await (await page.request.get('/api/discussions/' + id)).json()).activity).toBeNull();
   await page.reload(); await page.getByRole('tab', { name: /^結論/ }).click();
-  const result = page.getByRole('region', { name: '共識結果' });
-  await expect(result.getByRole('heading', { name: '已完成結論', exact: true })).toBeVisible();
+  const result = page.getByRole('region', { name: '已審查的階段成果' });
+  await expect(result.getByText('階段共識 · 討論仍可繼續', { exact: false })).toBeVisible();
   await expect(result).toContainText('讓每個質疑都有可追溯的回覆'); await expect(result).toContainText('依據與說明');
-  const history = page.getByRole('region', { name: '階段成果' }); await expect(history).not.toBeVisible();
-  await page.getByText('查看討論過程與階段成果', { exact: true }).click(); await expect(history).toContainText('歷史階段成果');
-  await expect(history).not.toContainText('尚未標示為正式結論');
-  await page.getByText('查看討論過程與階段成果', { exact: true }).click();
+  await expect(page.locator('.room-outcome')).toHaveCount(0);
+  const saved = await (await page.request.get('/api/discussions/' + id)).json();
+  expect(saved.room.outcome).toBeNull(); expect(saved.room.interimResults).toHaveLength(1);
+  expect(saved.room.interimResults[0].reviews).toHaveLength(1); expect(saved.room.contributions).toBe(4);
   await page.setViewportSize({ width: 390, height: 844 }); expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   if (process.env.CANDC_SCREENSHOT_DIR) await page.screenshot({ path: path.join(process.env.CANDC_SCREENSHOT_DIR, 'conclusion-delivery-mobile.png'), fullPage: true });
   expect(errors).toEqual([]);

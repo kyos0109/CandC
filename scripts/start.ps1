@@ -1,5 +1,6 @@
 param([switch]$NoBrowser)
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'launcher-common.ps1')
 $candcRoot = Split-Path -Parent $PSScriptRoot
 Set-Location -LiteralPath $candcRoot
 $candcPort = if ($env:CANDC_PORT) { [int]$env:CANDC_PORT } else { 4317 }
@@ -8,9 +9,11 @@ $candcUrl = "http://127.0.0.1:$candcPort"
 try { $candcHealth = Invoke-RestMethod "$candcUrl/health" -TimeoutSec 2 } catch { $candcHealth = $null }
 if ($candcHealth) {
   if ($candcHealth.application -ne 'candc' -or $candcHealth.phase -ne 2) { throw 'The port is used by another application or an older CandC. Close the old server first, or set CANDC_PORT.' }
+  Write-Host "CandC is already running: $candcUrl"
   if (-not $NoBrowser) { Start-Process $candcUrl }
   exit 0
 }
+if (Test-CandCListener $candcPort) { throw 'The port is occupied, but its health check failed. Close the existing server first, or set CANDC_PORT.' }
 if (-not (Test-Path -LiteralPath 'node_modules')) {
   & npm.cmd ci --ignore-scripts
   if ($LASTEXITCODE -ne 0) { throw 'Dependency installation failed.' }
@@ -25,7 +28,10 @@ $candcDeadline = (Get-Date).AddSeconds(20)
 do {
   if ($candcProcess.HasExited) { throw 'CandC could not start. Inspect .cache/server-error.log.' }
   try { $candcHealth = Invoke-RestMethod "$candcUrl/health" -TimeoutSec 1 } catch { $candcHealth = $null }
-  if ($candcHealth -and $candcHealth.application -eq 'candc') { break }
+  if ($candcHealth) {
+    if ($candcHealth.application -ne 'candc' -or $candcHealth.phase -ne 2) { throw 'The port is not serving a compatible CandC instance. Inspect .cache/server-error.log.' }
+    break
+  }
   Start-Sleep -Milliseconds 200
 } while ((Get-Date) -lt $candcDeadline)
 if (-not $candcHealth) { throw 'CandC startup timed out.' }

@@ -14,7 +14,8 @@ test('active policy preserves stage results and a nonblocking question across re
   await stage.getByRole('button', { name: /來源發言/ }).first().click(); await expect(page.getByRole('tab', { name: '對話', exact: true })).toHaveAttribute('aria-selected', 'true');
   await settings(page); await page.getByRole('combobox', { name: '進行方式', exact: true }).selectOption('auto'); await closePanel(page);
   await page.getByRole('button', { name: '繼續討論', exact: true }).click();
-  await expect.poll(async () => (await snapshot(page)).room.workflow.tasks.find((t: any) => t.key === 'compare-scenarios').status, { timeout: 15000 }).toBe('completed'); await expect.poll(async () => (await snapshot(page)).activity).toBeNull();
+  await expect.poll(async () => (await snapshot(page)).room.workflow.tasks.find((t: any) => t.key === 'compare-scenarios').status, { timeout: 15000 }).toBe('completed');
+  await expect.poll(async () => { const s = await snapshot(page); return [s.room.contributions > 2, s.status !== 'running', s.activity]; }).toEqual([true, true, null]);
   state = await snapshot(page); expect(state.room.workflow.questions).toHaveLength(1); expect(state.room.contributions).toBeGreaterThan(2);
   await page.getByRole('textbox', { name: '加入討論' }).fill('預算已提供，請依原任務繼續。'); await page.getByRole('button', { name: '送出並續談 ↑' }).click(); await expect.poll(async () => (await snapshot(page)).room.workflow.questions[0].status).toBe('answered'); await expect.poll(async () => (await snapshot(page)).activity).toBeNull();
   await page.getByRole('tab', { name: '結論', exact: true }).click(); await expect(stage.getByText('你的預算範圍？', { exact: true })).toHaveCount(0);

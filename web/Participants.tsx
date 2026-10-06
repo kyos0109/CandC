@@ -1,5 +1,6 @@
+import { translate } from './i18n.js';
 export type Participant = { id: string; name: string; symbol: string; role?: string; model?: string; effort?: string };
-export const human: Participant = { id: 'user', name: '你', symbol: '你' };
+export const human: Participant = { id: 'user', get name() { return translate("你"); }, get symbol() { return translate("你"); } };
 export function participantsFromAgents(agents: Record<string, { model: string; effort: string; name?: string; symbol?: string; role?: string }>): Participant[] {
   const known: Record<string, { name: string; symbol: string }> = { codex: { name: 'Codex', symbol: 'C' }, claude: { name: 'Claude', symbol: 'A' } };
   return [human, ...Object.entries(agents).map(([id, agent]) => ({ id, name: agent.name ?? known[id]?.name ?? id,

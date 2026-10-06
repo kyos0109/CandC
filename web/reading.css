@@ -31,6 +31,6 @@
 .public-details>summary:hover{background:var(--hover)}
 .public-details>.markdown{padding-top:6px}
 /* In a saved message the toggle sits in the action row, so opening details never moves it. */
-.message:not(.pending) .message-body>.public-sections .public-details>summary{position:absolute;bottom:10px;left:10px}
+.message:not(.pending) .message-body .public-sections .public-details>summary{position:absolute;bottom:10px;left:10px}
 /* Narrow bubbles cannot fit the toggle beside the actions, so it returns to the flow above them. */
-@media(max-width:767px){.public-details>summary{min-height:36px}.message:not(.pending) .message-body>.public-sections .public-details>summary{position:static;margin-left:-8px}}
+@media(max-width:767px){.public-details>summary{min-height:36px}.message:not(.pending) .message-body .public-sections .public-details>summary{position:static;margin-left:-8px}}

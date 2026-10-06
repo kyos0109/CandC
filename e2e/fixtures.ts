@@ -27,6 +27,8 @@ export async function createLegacy(page: Page, options: { input?: Record<string,
   const { input = {}, start = 'start' } = options;
   await page.goto('/');
   const id = await page.evaluate(async ({ input, start, debate }) => {
+    const session = await fetch('/api/session');
+    if (!session.ok) throw new Error(`Session bootstrap failed: ${session.status}`);
     const kind = (input.kind as string | undefined) ?? 'discussion', id = crypto.randomUUID();
     const body = { behaviorVersion: 2, goal: '', constraints: '', focused: true, topic: 'Fixture topic.', backend: 'fake', kind, mode: 'manual', flow: 'free', roles: kind === 'debate' ? debate : { codex: '', claude: '' }, research: false, roots: [],
       agents: { codex: { model: 'demo-codex', effort: 'medium' }, claude: { model: 'demo-claude', effort: 'medium' } }, limits: { maxRounds: 50, maxDurationMs: 14_400_000, turnTimeoutMs: 600_000 }, ...input };
@@ -47,4 +49,19 @@ export async function settled(locator: Locator) { await locator.evaluate(el => P
 // Segmented controls are native radio groups named by aria-label.
 export function choice(page: Page, label: string) { return page.getByRole('radiogroup', { name: label, exact: true }).locator('input:checked'); }
 export async function choose(page: Page, label: string, value: string) { await page.getByRole('radiogroup', { name: label, exact: true }).locator(`input[value="${value}"]`).check(); }
+// WCAG contrast of an element's text colour against the backgrounds painted by it and its ancestors.
+export async function contrast(chip: Locator) {
+  return chip.evaluate(element => {
+    const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1; const context = canvas.getContext('2d')!;
+    const ancestors: Element[] = []; for (let current: Element | null = element; current; current = current.parentElement) ancestors.unshift(current);
+    context.fillStyle = 'white'; context.fillRect(0, 0, 1, 1);
+    for (const ancestor of ancestors) { context.fillStyle = getComputedStyle(ancestor).backgroundColor; context.fillRect(0, 0, 1, 1); }
+    const background = [...context.getImageData(0, 0, 1, 1).data].slice(0, 3);
+    const style = getComputedStyle(element); context.clearRect(0, 0, 1, 1); context.fillStyle = style.color; context.fillRect(0, 0, 1, 1);
+    const foreground = [...context.getImageData(0, 0, 1, 1).data].slice(0, 3);
+    const luminance = (rgb: number[]) => rgb.map(value => { const c = value / 255; return c <= .04045 ? c / 12.92 : ((c + .055) / 1.055) ** 2.4; }).reduce((sum, c, index) => sum + c * [0.2126, 0.7152, 0.0722][index]!, 0);
+    const a = luminance(foreground), b = luminance(background);
+    return { foreground, background, ratio: (Math.max(a, b) + .05) / (Math.min(a, b) + .05), font: style.fontSize };
+  });
+}
 export async function reading(page: Page) { if (await page.getByLabel('閱讀模式').count() === 0) await page.getByRole('button', { name: '閱讀設定', exact: true }).click(); }

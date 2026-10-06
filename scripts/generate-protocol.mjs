@@ -22,7 +22,7 @@ async function copy(relative) {
   await writeFile(target, source.replace(/from "([^"]+)"/g, 'from "$1.js"'));
 }
 for (const file of ['InitializeParams.ts', 'v2/ThreadStartParams.ts',
-  'v2/ThreadResumeParams.ts', 'v2/TurnStartParams.ts', 'v2/TurnInterruptParams.ts']) {
+  'v2/ThreadResumeParams.ts', 'v2/TurnStartParams.ts']) {
   await copy(file);
 }
 const version = spawnSync(executable, ['--version'], {

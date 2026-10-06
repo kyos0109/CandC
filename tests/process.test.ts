@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { JsonLineProcess } from '../src/adapters/process.js';
+import { JsonLineProcess, RpcConnection, type JsonConnection } from '../src/adapters/process.js';
 
 const fixture = path.resolve('tests/fixtures/process.mjs');
 const connection = (scenario: string, signal = new AbortController().signal) => new JsonLineProcess({
@@ -9,6 +9,25 @@ const connection = (scenario: string, signal = new AbortController().signal) => 
 });
 
 describe('owned local fixture processes', () => {
+  it('bounds queued bytes independently of the record count and settles the owned process', async () => {
+    const process = connection('flood');
+    try {
+      expect(await process.next()).toEqual({ ready: true });
+      process.endInput('go');
+      await expect(process.finish()).rejects.toMatchObject({ code: 'OUTPUT_LIMIT' });
+      await expect(process.next()).rejects.toMatchObject({ code: 'OUTPUT_LIMIT' });
+    } finally { await process.close(); }
+  });
+  it('bounds RPC notifications while awaiting a response', async () => {
+    let count = 0;
+    const transport: JsonConnection = {
+      send() {}, endInput() {}, async finish() {}, async close() {},
+      async next() { count++; return { method: 'fixture/update', params: 'x'.repeat(1024 * 1024) }; },
+    };
+    const rpc = new RpcConnection(transport);
+    await expect(rpc.request('fixture', {})).rejects.toMatchObject({ code: 'OUTPUT_LIMIT' });
+    expect(count).toBeLessThan(20);
+  });
   it('parses fragmented lines, drains buffered records, and observes clean exit', async () => {
     const process = connection('fragmented');
     try {

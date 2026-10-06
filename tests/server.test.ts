@@ -26,6 +26,9 @@ describe('phase-one HTTP contract', () => {
       const address = await server.listen({ host: '127.0.0.1', port: 0 });
       const response = await fetch(`${address}/api/discussions/${id}/events`, { headers: { authorization: `Bearer ${token}` }, signal: abort.signal });
       expect(response.status).toBe(200);
+      expect(response.headers.get('content-security-policy')).toContain("frame-ancestors 'none'");
+      expect(response.headers.get('x-frame-options')).toBe('DENY');
+      expect(response.headers.get('referrer-policy')).toBe('no-referrer');
       reader = response.body!.getReader();
       const decoder = new TextDecoder(); let text = '';
       while (!text.includes('id: 42\n')) {

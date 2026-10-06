@@ -13,6 +13,7 @@ export interface JsonConnection {
 }
 export type ProcessFactory = (spec: ProcessSpec) => JsonConnection;
 const MAX_BUFFER_BYTES = 2 * 1024 * 1024;
+const MAX_QUEUE_BYTES = 8 * 1024 * 1024;
 const rpcMessage = z.object({
   id: z.union([z.number(), z.string()]).optional(), method: z.string().optional(),
   params: z.unknown().optional(), result: z.unknown().optional(), error: z.unknown().optional(),
@@ -21,7 +22,8 @@ const rpcMessage = z.object({
 export class JsonLineProcess implements JsonConnection {
   private readonly child: ChildProcessWithoutNullStreams;
   private buffer = '';
-  private queue: unknown[] = [];
+  private queue: Array<{ value: unknown; bytes: number }> = [];
+  private queueBytes = 0;
   private waiter: { resolve: (value: unknown) => void; reject: (error: Error) => void } | undefined;
   private failure: Error | undefined;
   private ended = false;
@@ -59,6 +61,8 @@ export class JsonLineProcess implements JsonConnection {
   private fail(error: Error): void {
     this.failure ??= error;
     this.queue = [];
+    this.queueBytes = 0;
+    this.buffer = '';
     this.waiter?.reject(this.failure);
     this.waiter = undefined;
     void this.terminate();
@@ -76,6 +80,7 @@ export class JsonLineProcess implements JsonConnection {
   }
 
   private receive(chunk: string): void {
+    if (this.failure) return;
     this.buffer += chunk;
     if (Buffer.byteLength(this.buffer) > MAX_BUFFER_BYTES) {
       this.fail(new AppError('OUTPUT_LIMIT', 'Agent output exceeded the line size limit.'));
@@ -92,8 +97,13 @@ export class JsonLineProcess implements JsonConnection {
           this.waiter.resolve(value);
           this.waiter = undefined;
         } else {
-          this.queue.push(value);
-          if (this.queue.length > 1_000) this.fail(new AppError('OUTPUT_LIMIT', 'Agent output queue exceeded its limit.'));
+          const bytes = Buffer.byteLength(line);
+          this.queue.push({ value, bytes });
+          this.queueBytes += bytes;
+          if (this.queue.length > 1_000 || this.queueBytes > MAX_QUEUE_BYTES) {
+            this.fail(new AppError('OUTPUT_LIMIT', 'Agent output queue exceeded its limit.'));
+            return;
+          }
         }
       } catch {
         this.fail(new AppError('INVALID_JSON', 'Agent emitted invalid JSON.'));
@@ -112,7 +122,11 @@ export class JsonLineProcess implements JsonConnection {
 
   async next(): Promise<unknown> {
     if (this.failure) throw this.failure;
-    if (this.queue.length) return this.queue.shift();
+    if (this.queue.length) {
+      const item = this.queue.shift()!;
+      this.queueBytes -= item.bytes;
+      return item.value;
+    }
     if (this.ended) throw new AppError('PROCESS_CLOSED', 'Agent output ended before a complete result.');
     if (this.waiter) throw new Error('Concurrent reads are not supported.');
     return new Promise((resolve, reject) => { this.waiter = { resolve, reject }; });
@@ -139,6 +153,7 @@ export class JsonLineProcess implements JsonConnection {
 export class RpcConnection {
   private id = 0;
   private notifications: Array<{ method: string; params: unknown }> = [];
+  private notificationBytes = 0;
   constructor(private readonly connection: JsonConnection) {}
   notify(method: string, params?: unknown): void { this.connection.send({ method, params }); }
 
@@ -163,14 +178,25 @@ export class RpcConnection {
         if (message.error !== undefined) throw new AppError('RPC_ERROR', `App-server rejected ${method}.`);
         return message.result;
       }
-      if (message.method) this.notifications.push({ method: message.method, params: message.params });
-      if (this.notifications.length > 1_000) throw new AppError('OUTPUT_LIMIT', 'App-server notification queue exceeded its limit.');
+      if (message.method) {
+        const notification = { method: message.method, params: message.params };
+        this.notifications.push(notification);
+        this.notificationBytes += Buffer.byteLength(JSON.stringify(notification));
+      }
+      if (this.notifications.length > 1_000 || this.notificationBytes > MAX_QUEUE_BYTES) {
+        this.notifications = [];
+        this.notificationBytes = 0;
+        throw new AppError('OUTPUT_LIMIT', 'App-server notification queue exceeded its limit.');
+      }
     }
   }
 
   async next(): Promise<{ method: string; params: unknown }> {
     const buffered = this.notifications.shift();
-    if (buffered) return buffered;
+    if (buffered) {
+      this.notificationBytes -= Buffer.byteLength(JSON.stringify(buffered));
+      return buffered;
+    }
     const message = await this.read();
     if (!message.method) throw new AppError('INVALID_PROTOCOL', 'Unexpected app-server response.');
     return { method: message.method, params: message.params };

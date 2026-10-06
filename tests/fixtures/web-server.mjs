@@ -64,6 +64,33 @@ const legacy = new DiscussionController(new DiscussionStore(directory, fault), {
 const adapters = new Map();
 const policyResponse = request => {
   const text = fakeRoomResponse(request);
+  if (request.topic.startsWith('Review handoff fixture:')) {
+    const { control } = parseRoomAnswer(text), r = request.room;
+    if (r.actor === 'moderator') control.action = r.openingSpeaker ? { type: 'observe' } : { type: 'speak', target: 'claude', task: 'Respond to the public rebuttal.' };
+    else if (!r.proposal) control.action = { type: 'propose', result: 'An unaccepted proposed answer.', dissent: [], unresolved: [], delivery: { status: 'complete', kind: 'answer', basis: ['Public reasoning.'] } };
+    else if (r.actor === 'claude' && !r.proposal.reviews?.some(review => review.actor === 'claude')) control.action = { type: 'confirm', proposalId: r.proposal.id,
+      review: { adequate: false, reason: 'The proposed trade-off remains disputed.', gaps: ['Address the cost.'] } };
+    else control.action = { type: 'none' };
+    control.continuation = 'yield';
+    if (request.topic.endsWith('downgraded') && r.conclusionRequest?.kind === 'review' && r.conclusionRequest.target === r.actor) control.unknown = 'Rejected control field.';
+    return `Public response by ${r.actor}.\n${ROOM_CONTROL_START}\n${JSON.stringify(control)}\n${ROOM_CONTROL_END}`;
+  }
+  if (request.topic === 'Control fallback fixture.' || request.topic === 'Repair limit fixture.') {
+    const { control } = parseRoomAnswer(text);
+    if (request.topic === 'Control fallback fixture.') control.review = { adequate: true, reason: 'Rejected root-level review.', gaps: [] };
+    else control.action = { type: 'propose', result: 'Saved answer needing delivery metadata.', dissent: [], unresolved: [] };
+    return `Saved public discussion by ${request.room.actor}.\n${ROOM_CONTROL_START}\n${JSON.stringify(control)}\n${ROOM_CONTROL_END}`;
+  }
+  if (request.topic === 'Discussion revision fixture.' && request.room.purpose === 'discussion') {
+    const { control } = parseRoomAnswer(text), r = request.room;
+    const first = !r.messages.some(m => m.sender !== 'user' && m.purpose === 'discussion');
+    const answer = 'A reviewed interim answer {0}.';
+    control.action = r.proposal ? { type: 'confirm', proposalId: r.proposal.id, review: { adequate: true, reason: 'Independent peer review of the exact answer.', gaps: [] } } :
+      first ? { type: 'propose', result: answer, dissent: ['A retained objection.'], unresolved: ['An unverified limitation.'], delivery: { status: 'complete', kind: 'answer', basis: ['Public fixture reasoning.'] } } : { type: 'none' };
+    control.continuation = 'yield';
+    if (first) control.work = { tasks: [{ key: 'invalid key', task: 'Rejected fixture metadata.' }] };
+    return `${first ? answer : r.proposal ? 'Independent peer review.' : 'Further discussion after the reviewed result.'}\n${ROOM_CONTROL_START}\n${JSON.stringify(control)}\n${ROOM_CONTROL_END}`;
+  }
   if (request.topic.startsWith('Delivery fixture:') && request.room.purpose === 'discussion') {
     const { control } = parseRoomAnswer(text), r = request.room;
     const mode = request.topic.slice('Delivery fixture:'.length);

@@ -1,3 +1,4 @@
+import { translate } from '../i18n.js';
 import { useId, useMemo, type CSSProperties } from 'react';
 import type { ProviderId } from '../../src/room-contract.js';
 import { Icon } from '../Icon.js';
@@ -19,7 +20,7 @@ export function ProviderPicker({ label, value, onChange, status, disabled = fals
   const current = status?.(value), dot = { '--dot': `var(--${value})` } as CSSProperties;
   return <div className="model-picker pp" ref={box.root}>
     <div className="mp-field">
-      <div ref={box.trigger} className={'mp-trigger' + (box.open ? ' open' : '')} role="combobox" tabIndex={disabled ? -1 : 0} aria-label={`${label} 供應商`} aria-haspopup="listbox" aria-expanded={box.open} aria-controls={listId}
+      <div ref={box.trigger} className={'mp-trigger' + (box.open ? ' open' : '')} role="combobox" tabIndex={disabled ? -1 : 0} aria-label={translate("{0} 供應商", label)} aria-haspopup="listbox" aria-expanded={box.open} aria-controls={listId}
         aria-disabled={disabled || undefined} aria-activedescendant={box.open ? box.optionId(box.active) : undefined} onClick={box.toggle} onKeyDown={box.onKeyDown}>
         <span className="mp-dot" style={dot} aria-hidden="true"/>
         <span className="mp-text"><b>{providerNames[value]}</b></span>
@@ -29,7 +30,7 @@ export function ProviderPicker({ label, value, onChange, status, disabled = fals
       {box.open && <>
         <div className="mp-scrim" aria-hidden="true" onPointerDown={() => box.close(false)}/>
         <div className={'mp-pop' + (box.up ? ' up' : '')}>
-          <ul id={listId} className="mp-list" role="listbox" aria-label={`${label} 供應商清單`}>
+          <ul id={listId} className="mp-list" role="listbox" aria-label={translate("{0} 供應商清單", label)}>
             {PROVIDERS.map((provider, index) => { const info = status?.(provider);
               return <li key={provider} id={box.optionId(index)} role="option" aria-selected={index === selected} className={'mp-option pp-option' + (index === box.active ? ' active' : '') + (index === selected ? ' selected' : '')}
                 onPointerMove={() => box.setActive(index)} onClick={() => { onChange(provider); box.close(); }}>

@@ -15,6 +15,14 @@ if (scenario === 'fragmented') {
 } else if (scenario === 'wait') {
   process.stdout.write('{"ready":true}\n');
   setInterval(() => undefined, 1_000);
+} else if (scenario === 'flood') {
+  process.stdout.write('{"ready":true}\n');
+  process.stdin.on('data', async () => {
+    const line = JSON.stringify({ text: 'x'.repeat(1024 * 1024) }) + '\n';
+    for (let index = 0; index < 10; index++) {
+      if (!process.stdout.write(line)) await new Promise(resolve => process.stdout.once('drain', resolve));
+    }
+  });
 } else if (scenario === 'echo') {
   let input = '';
   process.stdin.setEncoding('utf8');

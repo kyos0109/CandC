@@ -7,7 +7,7 @@ import { buildPrompt, type AgentAdapter, type TurnRequest } from './adapters/typ
 import { redact, safeError } from './redaction.js';
 import { validateRoots } from './research.js';
 import { roomInputSchema, parseRoomAnswer, roomPreview, isJudge, type RoomInput, type RoomDiscussion, type ParticipantId,
-  type ProviderId, type RoomCall, type RoomMessage, type RoomControl, type ModeratorAction } from './room-contract.js';
+  type ProviderId, type RoomCall, type RoomMessage, type RoomControl, type ModeratorAction, type MetadataDiagnostic } from './room-contract.js';
 import { PerformanceStore, type Measurement, type PerformanceObserver, type PerformanceRecord } from './performance.js';
 import { emptyWorkflow, continuationTask, runnableTasks, updateWorkflow } from './discussion-policy.js';
 import { deliveryProblem, type ConclusionDelivery } from './conclusion.js';
@@ -17,7 +17,8 @@ const savedDelivery = (delivery?: ConclusionDelivery) => delivery ? { ...deliver
 type Listener = (event: RunEvent) => void;
 type ActiveTurn = { id: string; grantId: string; actor: ParticipantId; abort: AbortController; open: boolean; text: string; interrupted: boolean; reason: string };
 type Runtime = { abort: AbortController; task: Promise<void>; pause: boolean; startedAt: number; initialElapsed: number;
-  purpose: 'discussion' | 'summary'; turn: ActiveTurn | null; executionId: string; versions: Partial<Record<ProviderId, string | null>>; redirects: number; deliveryCorrections: number };
+  purpose: 'discussion' | 'summary'; turn: ActiveTurn | null; executionId: string; versions: Partial<Record<ProviderId, string | null>>; redirects: number;
+  deliveryRepair: { key: string; attempts: number; callId: string | null } | null };
 type CallResult = { call: RoomCall; text: string; control: RoomControl | null };
 export type RoomAdapterFactory = (provider: ProviderId, workspace: string, backend: 'fake' | 'live', actor: ParticipantId) => AgentAdapter;
 export type InitialRoomHistory = { messages: RoomMessage[]; sourceDiscussionId: string; elapsedMs: number };
@@ -122,7 +123,7 @@ export class RoomController {
         room: { ...state.room, ...(!isJudge(state) ? { muted: [] } : {}), ...(resetFakeSessions || resetModeratorAuthority || upgradeDelivery ? { sessions: {} } : {}),
           ...(upgradeDelivery ? { deliveryVersion: 1 as const, proposal: null, conclusionRequest: null } : {}), operations: [...state.room.operations, { id: operationId, fingerprint }] } });
       this.reloadedFakeRooms.delete(id);
-      const runtime: Runtime = { abort: new AbortController(), task: Promise.resolve(), pause: false, startedAt: Date.now(), initialElapsed: state.elapsedMs, purpose, turn: null, executionId, versions: versions ?? {}, redirects: 0, deliveryCorrections: 0 };
+      const runtime: Runtime = { abort: new AbortController(), task: Promise.resolve(), pause: false, startedAt: Date.now(), initialElapsed: state.elapsedMs, purpose, turn: null, executionId, versions: versions ?? {}, redirects: 0, deliveryRepair: null };
       this.runtimes.set(id, runtime); runtime.task = Promise.resolve().then(() => this.execute(id, runtime)); void runtime.task.catch(() => undefined); return this.get(id);
     }); } catch (error) { measurement?.end(this.measurementOutcome(id, error)); throw error; }
     finally { measurement?.end('success'); }
@@ -149,7 +150,7 @@ export class RoomController {
   }
   private elapsed(runtime: Runtime) { return runtime.initialElapsed + Date.now() - runtime.startedAt; }
   private async call(id: string, runtime: Runtime, actor: ParticipantId, purpose: RoomCall['purpose'], task: string,
-    draft: RoomCall['draft'] = null, onDelta?: (text: string) => void, signal?: AbortSignal, fresh = false): Promise<CallResult> {
+    draft: RoomCall['draft'] = null, onDelta?: (text: string) => void, signal?: AbortSignal, fresh = false, openingSpeaker?: ParticipantId): Promise<CallResult> {
     const initial = this.get(id), participant = actor === 'moderator' ? initial.moderator! : initial.participants.find(p => p.id === actor)!;
     const callId = randomUUID();
     const measurement = this.performance.begin({ kind: 'turn', discussionId: id, executionId: runtime.executionId, requestId: callId, backend: initial.backend,
@@ -177,6 +178,7 @@ export class RoomController {
         evidence: actor === 'moderator' ? [] : s.evidence.filter(e => !e.owner || e.owner === actor).map(({ owner: _, ...e }) => e),
         untilConclusion: s.mode === 'conclusion',
         room: { actor, provider: participant.provider, taskVersion: s.room.taskVersion, grantId: draft ? runtime.turn?.grantId ?? null : s.room.grant?.id ?? null,
+          ...(openingSpeaker ? { openingSpeaker } : {}),
           deliveryVersion: s.room.deliveryVersion, conclusionRequest: s.room.conclusionRequest,
           moderatorMode: s.moderatorMode ?? 'facilitator', discussionKind: s.kind,
           execution: { mode: s.mode, researchEnabled: s.research, researchAvailable: s.research && purpose === 'discussion',
@@ -190,6 +192,7 @@ export class RoomController {
       measurement?.mark('selectionEnd');
       const c: RoomCall = { id: callId, participant: actor, provider: participant.provider, generation, sessionId: session?.id ?? null, nativeSessionId: null,
         taskVersion: s.room.taskVersion, grantId: request.room!.grantId, purpose, messages: messages.map(m => m.id), topic: s.topic, goal: s.goal, constraints: s.constraints,
+        ...(openingSpeaker ? { openingSpeaker } : {}),
         task: request.room!.task, settings: participant.settings, payloadHash: createHash('sha256').update(payload).digest('hex'), characters: payload.length,
         draft, status: 'prepared', startedAt: new Date().toISOString(), durationMs: null, usage: null, reservationMs: timeoutMs, references: [] };
       measurement?.mark('preparedStart');
@@ -241,33 +244,40 @@ export class RoomController {
         if (actor !== 'moderator' && runtime.turn) runtime.turn.open = false;
         request.signal.throwIfAborted();
         if (s.status !== 'running') throw new AppError('CANCELLED', 'Execution no longer active.');
+        const identity = parsed.control ?? parsed.fallbackIdentity;
+        const downgraded = parsed.diagnostic === 'schema' && identity?.taskVersion === call.taskVersion && identity.grantId === call.grantId;
+        if (downgraded) parsed.control = { version: 3, taskVersion: call.taskVersion, grantId: call.grantId, continuation: 'yield', action: { type: actor === 'moderator' ? 'observe' : 'none' }, references: [] };
         const valid = parsed.control?.taskVersion === call.taskVersion && parsed.control.grantId === call.grantId;
         const messages = purpose === 'monitor' ? s.messages : [...s.messages, this.message(s, actor, text, purpose === 'moderation' ? 'moderation' : purpose === 'summary' ? 'summary' : 'discussion', 'completed', call.id, call.taskVersion,
           parsed.control?.continuation)];
         const availableIds = new Set([...call.messages, ...(prepared.session?.delivered ?? [])]);
-        const references = parsed.control?.references ?? [];
-        const referencesValid = references.every(r => availableIds.has(r.messageId));
-        let diagnostic: RoomCall['controlDiagnostic'] = parsed.diagnostic ?? (parsed.control?.taskVersion !== call.taskVersion ? 'task-version' : parsed.control?.grantId !== call.grantId ? 'grant' : !referencesValid ? 'references' : undefined);
+        const offeredReferences = parsed.control?.references ?? [];
+        const references = offeredReferences.filter(r => availableIds.has(r.messageId));
+        const metadataDiagnostics: MetadataDiagnostic[] = [...(parsed.metadataDiagnostics ?? [])];
+        if (downgraded) metadataDiagnostics.push('control-schema');
+        if (references.length !== offeredReferences.length) metadataDiagnostics.push('references');
+        const diagnostic: RoomCall['controlDiagnostic'] = identity && identity.taskVersion !== call.taskVersion ? 'task-version' : identity && identity.grantId !== call.grantId ? 'grant' : downgraded ? undefined : parsed.diagnostic;
+        if (parsed.control) parsed.control = { ...parsed.control, references };
         let workflow = s.room.workflow;
-        let workError: unknown;
         if (workflow && purpose !== 'monitor') {
-          try { workflow = updateWorkflow({ ...s, messages }, call, valid && referencesValid ? parsed.control : null, new Set([...availableIds, call.id]), text); }
+          try { workflow = updateWorkflow({ ...s, messages }, call, valid ? parsed.control : null, new Set([...availableIds, call.id]), text); }
           catch (error) {
-            workError = error; diagnostic = error instanceof AppError && error.code === 'WORKFLOW_LIMIT' ? 'workflow-limit' : 'workflow-reference';
+            if (!(error instanceof AppError) || !['WORKFLOW_LIMIT', 'WORKFLOW_REFERENCE'].includes(error.code)) throw error;
+            metadataDiagnostics.push(error.code === 'WORKFLOW_LIMIT' ? 'work-limit' : 'work-reference');
+            if (parsed.control) { const { work: _, ...control } = parsed.control; parsed.control = control; }
             workflow = updateWorkflow({ ...s, messages }, call, null, new Set([...availableIds, call.id]), text);
           }
         }
         const completed: RoomCall = { ...call, nativeSessionId: native!.id, status: 'completed', durationMs: Date.now() - started,
-          references: referencesValid ? references.map(r => ({ ...r, reason: redact(r.reason) })) : [], ...(diagnostic ? { controlDiagnostic: diagnostic } : {}) };
+          references: valid ? references.map(r => ({ ...r, reason: redact(r.reason) })) : [], ...(diagnostic ? { controlDiagnostic: diagnostic } : {}),
+          ...(metadataDiagnostics.length ? { metadataDiagnostics: [...new Set(metadataDiagnostics)] } : {}) };
         const session = { ...native!, generation: call.generation, delivered: [...new Set([...(prepared.session?.delivered ?? []), ...call.messages, ...(purpose === 'monitor' ? [] : [call.id])])], configurationVersion: s.room.configurationVersion };
         measurement?.mark(purpose === 'monitor' ? 'diagnosticCommitStart' : 'answerCommitStart');
         await this.commit({ ...s, messages, room: { ...s.room, ...(workflow ? { workflow } : {}), sessions: fresh ? s.room.sessions : { ...s.room.sessions, [actor]: session }, calls: s.room.calls.map(c => c.id === call.id ? completed : c) } },
           purpose === 'monitor' ? 'state' : 'message', purpose === 'monitor' ? { monitorCompleted: call.id } : { message: messages.at(-1)! });
         measurement?.mark(purpose === 'monitor' ? 'diagnosticCommitEnd' : 'answerCommitEnd');
         if (measurement) { measurement.record.answerSaved = purpose !== 'monitor'; if (purpose === 'monitor') measurement.record.diagnosticsSaved = true; }
-        if (!referencesValid) throw new AppError('INVALID_REFERENCE', 'Public answer saved; response references input outside its owned session snapshot.');
         if (!valid) throw new AppError('INVALID_CONTROL', `公開回答已保存，控制資料無效（${diagnostic}）；已暫停且不重送。`);
-        if (workError) throw workError;
       });
       measurement?.end('success'); return { call, text, control: parsed.control };
     } catch (error) {
@@ -311,6 +321,12 @@ export class RoomController {
       if (monitor && !['observe', 'interrupt', 'mute'].includes(a.type)) throw new AppError('INVALID_CONTROL', 'Monitor command cannot change the next turn.');
       if ('target' in a && !s.participants.some(p => p.id === a.target)) throw new AppError('INVALID_REFERENCE', 'Unknown moderator target.');
       if (monitor && a.type === 'mute' && a.target !== turn!.actor) throw new AppError('INVALID_CONTROL', 'Monitor mute must target the current speaker.');
+      if (result.call.openingSpeaker && a.type !== 'observe') {
+        const commandId = randomUUID();
+        await this.commit({ ...s, room: { ...s.room, commands: [...s.room.commands, { id: commandId, callId: result.call.id, action: a, applied: false }] } },
+          'state', { moderatorCommand: commandId, action: a.type, rejected: 'opening-observe-required' });
+        return;
+      }
       if (!isJudge(s) && !['observe', 'speak'].includes(a.type)) {
         const commandId = randomUUID();
         await this.commit({ ...s, room: { ...s.room, commands: [...s.room.commands, { id: commandId, callId: result.call.id, action: a, applied: false }] } },
@@ -383,7 +399,7 @@ export class RoomController {
       if (!turn.open || runtime.abort.signal.aborted || Date.now() < nextCheck || turn.text.length <= checked || monitorTask) return;
       nextCheck = Date.now() + this.monitorIntervalMs; checked = turn.text.length;
       const draft = { turnId: turn.id, text: turn.text, through: checked };
-      monitorTask = this.call(id, runtime, 'moderator', 'monitor', 'Check this provisional public draft for repetition, irrelevant content or a reason to stop; preserve the original goal and constraints.', draft, undefined, monitorAbort.signal)
+      monitorTask = this.call(id, runtime, 'moderator', 'monitor', 'Observe this unfinished public draft. Use observe unless clear ongoing irrelevance or sustained repetition requires intervention. Let incomplete arguments develop; missing evidence, disagreement or an intended lookup normally belongs in the next exchange, not an interruption. Preserve the original goal and constraints.', draft, undefined, monitorAbort.signal)
         .then(result => this.command(id, runtime, result, true)).catch(error => {
           if (!monitorAbort.signal.aborted) { monitorError = error; turn.abort.abort(); }
         }).finally(() => { monitorTask = null; });
@@ -399,10 +415,13 @@ export class RoomController {
       await this.exclusive(async () => {
         const current = this.get(id); const room = { ...current.room, grant: null, currentSpeaker: null, contributions: current.room.contributions + 1 };
         if (result.call.taskVersion === room.taskVersion && (!current.moderator || !isJudge(current))) {
+          // A completed substantive response consumes its priority turn, not the
+          // proposal's unresolved peer review. New repair requests below survive.
+          if (room.conclusionRequest?.target === actor && this.isReviewRequest(current)) room.conclusionRequest = null;
           const action = result.control!.action;
           if (action.type === 'propose') {
             const problem = room.deliveryVersion === 1 ? deliveryProblem(action) : null;
-            if (problem) room.conclusionRequest = { target: actor, reason: problem };
+            if (problem) room.conclusionRequest = { target: actor, reason: problem, kind: 'repair' };
             else {
               room.conclusionRequest = null;
               room.proposal = { id: result.call.id, author: actor, taskVersion: room.taskVersion, result: redact(action.result), dissent: action.dissent.map(value => redact(value)), unresolved: action.unresolved.map(value => redact(value)), confirmed: [actor],
@@ -410,24 +429,36 @@ export class RoomController {
             }
           }
           else if (action.type === 'confirm') {
-            if (!room.proposal || room.proposal.id !== action.proposalId || room.proposal.taskVersion !== room.taskVersion || room.proposal.author === actor) throw new AppError('INVALID_CONTROL', 'Confirmation does not match a peer proposal.');
-            const review = action.review;
-            if (room.deliveryVersion === 1 && !review) room.conclusionRequest = { target: actor, reason: 'Independently review whether this exact proposal answers the original user request at the requested depth. Include review {adequate,reason,gaps}; agreement alone is not delivery review.' };
-            else {
-              if (review) room.proposal = { ...room.proposal, reviews: [...(room.proposal.reviews ?? []).filter(r => r.actor !== actor), { ...review, reason: redact(review.reason), gaps: review.gaps.map(value => redact(value)), actor, callId: result.call.id }] };
-              if (review && (!review.adequate || review.gaps.length > 0)) {
-                room.proposal = { ...room.proposal, confirmed: room.proposal.confirmed.filter(id => id !== actor) };
-                room.conclusionRequest = { target: room.proposal.author, reason: redact(`Revise the proposed answer to the original request, addressing this peer delivery review: ${review.reason}\nAddress the specific gaps in the current proposal's reviews. Publish a new proposal containing the requested answer and retained disagreements/limitations; do not merely promise future work unless that is what the user requested.`) };
-              } else {
-                room.proposal = { ...room.proposal, confirmed: [...new Set([...room.proposal.confirmed, actor])] };
-                if (room.conclusionRequest?.target === actor) room.conclusionRequest = null;
+            if (!room.proposal || room.proposal.id !== action.proposalId || room.proposal.taskVersion !== room.taskVersion || room.proposal.author === actor) {
+              room.calls = room.calls.map(c => c.id === result.call.id ? { ...c, metadataDiagnostics: [...new Set<MetadataDiagnostic>([...(c.metadataDiagnostics ?? []), 'proposal-reference'])] } : c);
+              if (room.proposal && room.proposal.author !== actor) room.conclusionRequest = { target: actor, kind: 'repair', reason: 'The confirmation did not name the exact current peer proposal. Independently review the supplied proposal.id; do not invent or reuse a different identity.' };
+            } else {
+              const review = action.review;
+              if (room.deliveryVersion === 1 && !review) room.conclusionRequest = { target: actor, kind: 'repair', reason: 'Independently review whether this exact proposal answers the original user request at the requested depth. Include review {adequate,reason,gaps}; agreement alone is not delivery review.' };
+              else {
+                if (review) room.proposal = { ...room.proposal, reviews: [...(room.proposal.reviews ?? []).filter(r => r.actor !== actor), { ...review, reason: redact(review.reason), gaps: review.gaps.map(value => redact(value)), actor, callId: result.call.id }] };
+                if (review && (!review.adequate || review.gaps.length > 0)) {
+                  room.proposal = { ...room.proposal, confirmed: room.proposal.confirmed.filter(id => id !== actor) };
+                  room.conclusionRequest = { target: room.proposal.author, kind: 'review', reason: redact(`Respond to this peer review of the proposed answer: ${review.reason}\nAddress the specific gaps in the current proposal's reviews. You may revise and publish a new proposal, or explain why you disagree. A rebuttal alone does not confirm the existing proposal.`) };
+                } else {
+                  room.proposal = { ...room.proposal, confirmed: [...new Set([...room.proposal.confirmed, actor])] };
+                  if (room.conclusionRequest?.target === actor) room.conclusionRequest = null;
+                }
               }
             }
           } else if (action.type !== 'none') throw new AppError('INVALID_CONTROL', 'Speaker cannot issue moderator commands.');
           if ((action.type === 'confirm' || current.room.workflow) && room.proposal?.taskVersion === room.taskVersion &&
-            current.participants.every(p => room.proposal!.confirmed.includes(p.id)) && !room.conclusionRequest && !continuationTask({ ...current, room }))
-            room.outcome = { authority: 'participants', result: room.proposal.result, dissent: room.proposal.dissent, unresolved: room.proposal.unresolved, unhandledRequests: this.unhandledRequests(current), ...(room.proposal.delivery ? { delivery: room.proposal.delivery } : {}) };
-        } else if (current.moderator && !['none', 'propose', 'confirm'].includes(result.control!.action.type)) throw new AppError('INVALID_CONTROL', 'Speaker cannot issue moderator commands.');
+            current.participants.every(p => room.proposal!.confirmed.includes(p.id)) && !room.conclusionRequest && !continuationTask({ ...current, room })) {
+            if (current.mode === 'conclusion') room.outcome = { authority: 'participants', result: room.proposal.result, dissent: room.proposal.dissent, unresolved: room.proposal.unresolved, unhandledRequests: this.unhandledRequests(current), ...(room.proposal.delivery ? { delivery: room.proposal.delivery } : {}) };
+            else {
+              room.interimResults = [...(room.interimResults ?? []), { ...room.proposal, unhandledRequests: this.unhandledRequests(current) }];
+              room.proposal = null;
+            }
+          }
+        } else if (current.moderator) {
+          if (!['none', 'propose', 'confirm'].includes(result.control!.action.type)) throw new AppError('INVALID_CONTROL', 'Speaker cannot issue moderator commands.');
+          if (result.control!.action.type !== 'none') room.calls = room.calls.map(c => c.id === result.call.id ? { ...c, metadataDiagnostics: [...new Set<MetadataDiagnostic>([...(c.metadataDiagnostics ?? []), 'unsupported-action'])] } : c);
+        }
         await this.commit({ ...current, room });
       });
       return result;
@@ -440,6 +471,10 @@ export class RoomController {
         room: { ...current.room, grant: null, currentSpeaker: null, contributions: current.room.contributions + 1 } }); });
       return null;
     } finally { if (timer) clearInterval(timer); monitorAbort.abort(); runtime.turn = null; }
+  }
+  private isReviewRequest(s: RoomDiscussion): boolean {
+    const request = s.room.conclusionRequest;
+    return !!request && (request.kind === 'review' || request.kind === undefined && s.room.proposal?.author === request.target && !!s.room.proposal.reviews?.some(r => !r.adequate || r.gaps.length));
   }
   private nextSpeaker(s: RoomDiscussion, previous: ParticipantId | null) {
     const eligible = s.participants.filter(p => !s.room.muted.includes(p.id)); if (!eligible.length) return null;
@@ -475,7 +510,7 @@ export class RoomController {
           await this.exclusive(async () => { const current = this.get(id); if (current.status === 'running' && !runtime.abort.signal.aborted) await this.commit({ ...current, status: 'paused', pauseReason: runtime.pause ? 'Paused by user.' : current.room.outcome?.delivery?.status === 'partial' ? '暫定結果已保存，結論交付尚未完成。' : current.room.outcome ? '參與者已確認同一版結果，保留分歧與限制。' : '本輪或執行上限已達，請明確續談。' }); }); break;
         }
         if (s.moderator && isJudge(s)) {
-          const result = await this.call(id, runtime, 'moderator', 'moderation', 'Choose the next useful speaking task, deepen an unresolved question, publicly explain a decision, change a related topic or finish with limitations. You cannot see directed messages.');
+          const result = await this.call(id, runtime, 'moderator', 'moderation', 'Arrange the next useful speaker exchange, letting peers develop and respond to public arguments. Use a justified ruling only when the requested exchange has been sufficiently examined; do not close an unfinished exchange just because a question or missing fact remains. You cannot see directed messages.');
           await this.command(id, runtime, result, false); await this.applyTopic(id); s = this.get(id);
           if (s.status !== 'running') break;
           if (!s.room.grant) {
@@ -483,27 +518,58 @@ export class RoomController {
           }
           decisionsWithoutSpeech = 0; previous = s.room.grant.target; await this.speak(id, runtime, previous, s.room.grant.task);
         } else {
-          if (s.room.conclusionRequest && ++runtime.deliveryCorrections > 3) {
-            await this.exclusive(async () => { const current = this.get(id); if (current.status === 'running' && !runtime.abort.signal.aborted) await this.commit({ ...current, status: 'paused', pauseReason: '結論仍需補寫或審查；已達本次修正上限，保留原文與缺漏，請明確續談。' }); }); break;
-          }
-          let actor: ParticipantId | null = s.room.grant?.target ?? this.nextSpeaker(s, previous);
+          const invitation = s.room.grant?.version === s.room.taskVersion ? s.room.grant : null;
+          const correction = s.room.conclusionRequest;
+          const substantiveReview = this.isReviewRequest(s);
+          if (!correction || substantiveReview) runtime.deliveryRepair = null;
+          let actor: ParticipantId | null = correction?.target ?? invitation?.target ?? this.nextSpeaker(s, previous);
           const next = continuationTask(s);
           if (!actor && next && ++runtime.redirects <= 3) actor = next.target;
           if (!actor) { await this.exclusive(async () => { const current = this.get(id); if (current.status === 'running' && !runtime.abort.signal.aborted) await this.commit({ ...current, status: 'paused', pauseReason: next ? '未完成必要的分析或核對；已達調度修正上限，請查看階段成果。' : current.room.workflow ? '目前沒有可執行任務；保留階段成果與待補充問題。' : '所有參與者等待新輸入。' }); }); break; }
+          if (correction && !substantiveReview && actor === correction.target) {
+            const key = `${s.room.taskVersion}:${correction.target}:${s.room.proposal?.id ?? 'delivery'}`;
+            if (runtime.deliveryRepair?.key !== key) runtime.deliveryRepair = { key, attempts: 0, callId: null };
+            if (runtime.deliveryRepair.attempts >= 3) {
+              await this.exclusive(async () => {
+                const current = this.get(id); if (current.status !== 'running' || runtime.abort.signal.aborted) return;
+                if (current.mode === 'conclusion') await this.commit({ ...current, status: 'paused', pauseReason: '結論仍需補寫或審查；已達本次修正上限，保留原文與缺漏，請明確續談。' });
+                else await this.commit({ ...current, room: { ...current.room, proposal: null, conclusionRequest: null,
+                  calls: current.room.calls.map(c => c.id === runtime.deliveryRepair?.callId ? { ...c, metadataDiagnostics: [...new Set<MetadataDiagnostic>([...(c.metadataDiagnostics ?? []), 'delivery-repair-limit'])] } : c) } }, 'state', { deliveryRepairExhausted: true });
+              });
+              runtime.deliveryRepair = null; continue;
+            }
+            runtime.deliveryRepair.attempts++;
+          }
+          const deferredInvitation = invitation && invitation.target !== actor ? invitation : null;
           const queued = runnableTasks(s).find(t => !t.target || t.target === actor);
-          const invitation = s.room.grant?.task;
-          const task = queued?.task ?? (next && next.target === actor ? next.task : invitation ? `The moderator invites you to address: ${invitation}\nTreat this as an optional angle. Develop the original topic freely and respond to public peer arguments.` : s.room.workflow ? 'Discuss the original question from your perspective and respond to other speakers. Choose useful directions yourself.' : 'Develop the current issue, answer eligible user requests and check public peer claims.');
+          const pendingTask = queued?.task ?? (next && next.target === actor ? next.task : null);
+          const task = (pendingTask ?? 'Discuss the original question from your perspective and respond to public peer arguments. Choose useful directions yourself.') +
+            (invitation?.target === actor ? `\nThe moderator invites you to address: ${invitation.task}\nRespond to this public point alongside any pending task, or explain why another issue should take priority. Keep the original topic and choose your own analysis and conclusion.` : '');
           await this.exclusive(async () => { const current = this.get(id); await this.commit({ ...current, room: { ...current.room,
             currentSpeaker: actor, grant: { id: randomUUID(), target: actor!, task, version: current.room.taskVersion, ...(queued ? { taskKey: queued.key } : {}) } } }); });
-          await this.speak(id, runtime, actor, task); previous = actor;
+          if (s.moderator && s.room.moderatorCalls < s.limits.maxModeratorCalls && s.room.calls.every(c => c.purpose === 'summary') &&
+            !s.messages.some(m => m.sender !== 'user' && m.purpose === 'discussion')) {
+            const opening = await this.call(id, runtime, 'moderator', 'moderation',
+              'Briefly open the discussion: introduce the original topic, supplied goal and public roster, then hand over to openingSpeaker. Do not answer the topic, narrow it or add a discussion framework. Use observe only.',
+              null, undefined, undefined, false, actor);
+            await this.command(id, runtime, opening, false);
+            if (runtime.pause || runtime.abort.signal.aborted || this.get(id).status !== 'running') continue;
+          }
+          const spoken = await this.speak(id, runtime, actor, task); previous = actor;
+          if (runtime.deliveryRepair && correction?.target === actor) runtime.deliveryRepair.callId = spoken?.call.id ?? null;
+          if (deferredInvitation) await this.exclusive(async () => {
+            const current = this.get(id);
+            if (current.status === 'running' && !runtime.abort.signal.aborted && deferredInvitation.version === current.room.taskVersion)
+              await this.commit({ ...current, room: { ...current.room, grant: deferredInvitation, currentSpeaker: null } });
+          });
         }
         await this.exclusive(async () => { const current = this.get(id); await this.commit({ ...current, round: Math.floor(current.room.contributions / current.participants.length) + 1 }); });
         s = this.get(id);
-        if (s.moderator && !isJudge(s) && !runtime.pause && !runtime.abort.signal.aborted && s.status === 'running' &&
+        if (s.moderator && !isJudge(s) && !s.room.grant && !runtime.pause && !runtime.abort.signal.aborted && s.status === 'running' &&
           s.room.moderatorCalls < s.limits.maxModeratorCalls && (s.room.outcome || s.room.contributions % s.participants.length === 0)) {
           const result = await this.call(id, runtime, 'moderator', 'moderation', s.room.outcome ?
             'Briefly present the result explicitly confirmed by every speaker. Preserve its meaning, dissent and limitations. Use observe; do not substitute your own judgment.' :
-            'If useful, briefly coordinate the next exchange or invite a speaker to address a remaining point. Do not answer the topic yourself, narrow it, pause it or claim a conclusion. Prefer observe.');
+            'Briefly connect the public viewpoints when useful, identify a specific unanswered argument or invite an appropriate speaker to respond. Leave the substance to the speakers. Use observe when no invitation is needed; do not narrow the topic, pause it or claim a conclusion.');
           await this.command(id, runtime, result, false);
         }
       }
@@ -511,13 +577,27 @@ export class RoomController {
       if (!this.store.isBlocked(id)) await this.exclusive(async () => { const s = this.get(id); if (s.status === 'running') await this.commit({ ...s,
         status: runtime.abort.signal.aborted ? 'stopped' : s.room.calls.some(c => c.status === 'failed' && Date.parse(c.startedAt) >= runtime.startedAt) ? 'indeterminate' : 'paused', pauseReason: safeError(error), room: { ...s.room, grant: null, currentSpeaker: null } }, 'error', { error: safeError(error) }); });
     } finally {
-      try { if (!this.store.isBlocked(id)) await this.exclusive(async () => { const s = this.get(id); await this.commit({ ...s,
-        elapsedMs: this.elapsed(runtime), activity: null, room: { ...s.room, grant: null, currentSpeaker: null } }); }); }
+      try { if (!this.store.isBlocked(id)) await this.exclusive(async () => {
+        const s = this.get(id), lastCommand = s.room.commands.at(-1);
+        const invitation = s.status === 'paused' && !isJudge(s) && s.room.grant?.version === s.room.taskVersion &&
+          lastCommand?.applied && lastCommand.action.type === 'speak' && lastCommand.action.target === s.room.grant.target && lastCommand.action.task === s.room.grant.task ? s.room.grant : null;
+        await this.commit({ ...s, elapsedMs: this.elapsed(runtime), activity: null, room: { ...s.room, grant: invitation, currentSpeaker: null } });
+      }); }
       finally { this.runtimes.delete(id); }
     }
   }
-  async pause(id: string) { return this.exclusive(async () => { const s = this.get(id); const r = this.runtimes.get(id); if (r) r.pause = true;
-    await this.commit({ ...s, status: r ? s.status : 'paused', pauseReason: 'User requested pause after the current answer.' }); return this.get(id); }); }
+  async pause(id: string) {
+    return this.exclusive(async () => {
+      const state = this.get(id);
+      this.assertStorage(id);
+      if (state.status === 'stopped' || state.status === 'indeterminate') return state;
+      const runtime = this.runtimes.get(id);
+      if (runtime) runtime.pause = true;
+      await this.commit({ ...state, status: state.status === 'ready' ? 'paused' : state.status,
+        pauseReason: 'User requested pause after the current answer.' });
+      return this.get(id);
+    });
+  }
   async stop(id: string) { return this.exclusive(async () => { const s = this.get(id); await this.commit({ ...s, status: 'stopped', pauseReason: 'Stopped by user.', room: { ...s.room, grant: null, currentSpeaker: null } }); this.runtimes.get(id)?.abort.abort(); return this.get(id); }); }
   async send(id: string, messageId: string, text: string, recipient: ParticipantId | 'all', inReplyTo: string | null = null) {
     return this.exclusive(async () => {

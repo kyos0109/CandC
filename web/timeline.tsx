@@ -1,3 +1,4 @@
+import { translate, dateLocale } from './i18n.js';
 import type { ReactNode } from 'react';
 
 type Stamped = { createdAt: string; sender: string; round: number };
@@ -9,10 +10,10 @@ export function timelineDividers(messages: ReadonlyArray<Stamped>): ReactNode[] 
     const date = new Date(message.createdAt), parts: ReactNode[] = [];
     if (date.toDateString() !== day) {
       day = date.toDateString();
-      const time = date.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', hour12: false });
-      parts.push(<div key="day" className="day-divider">{day === new Date().toDateString() ? '今天' : `${date.getMonth() + 1} 月 ${date.getDate()} 日`} {time}</div>);
+      const time = date.toLocaleTimeString(dateLocale(), { hour: '2-digit', minute: '2-digit', hour12: false });
+      parts.push(<div key="day" className="day-divider">{day === new Date().toDateString() ? translate("今天") : translate("{0} 月 {1} 日", date.getMonth() + 1, date.getDate())} {time}</div>);
     }
-    if (message.sender !== 'user' && message.round > round) { round = message.round; parts.push(<div key="round" className="round-divider">第 {round} 輪</div>); }
+    if (message.sender !== 'user' && message.round > round) { round = message.round; parts.push(<div key="round" className="round-divider">{translate("第 {0} 輪", round)}</div>); }
     return parts;
   });
 }

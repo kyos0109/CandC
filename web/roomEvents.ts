@@ -1,3 +1,4 @@
+import { translate } from './i18n.js';
 import type { RoomDiscussion, RoomMessage } from '../src/room-contract.js';
 import { seatOf, type SeatView } from './seats.js';
 
@@ -20,10 +21,10 @@ const withDetail = (detail: string) => detail ? { detail } : {};
 export function noticeEvent(message: RoomMessage, seats: Record<string, SeatView>): RoomEvent {
   const line = firstLine(message.text), base = { kind: 'event' as const, id: message.id, at: message.createdAt, who: message.sender === 'user' ? 'user' as const : 'moderator' as const };
   const stop = /^(解除)?停止發言：(\S+)$/.exec(line);
-  if (stop) { const seat = seatOf(seats, stop[2]!); return { ...base, seat: seat.id, text: stop[1] ? `解除 ${seat.name} 的停止發言` : `停止 ${seat.name} 發言`, ...withDetail(tail(message.text)) }; }
-  if (line.startsWith('主持人中止本次發言：')) return { ...base, text: '中止了目前的發言', ...withDetail(line.slice('主持人中止本次發言：'.length)) };
-  if (line.startsWith('主題變更通知')) return { ...base, text: '通知改題，等你確認', ...withDetail(tail(message.text)) };
-  if (line.startsWith('使用者更新題目')) return { ...base, text: '你更新了題目、目標或限制', ...withDetail(tail(message.text)) };
+  if (stop) { const seat = seatOf(seats, stop[2]!); return { ...base, seat: seat.id, text: stop[1] ? translate("解除 {0} 的停止發言", seat.name) : translate("停止 {0} 發言", seat.name), ...withDetail(tail(message.text)) }; }
+  if (line.startsWith('主持人中止本次發言：')) return { ...base, text: translate("中止了目前的發言"), ...withDetail(line.slice(translate("主持人中止本次發言：").length)) };
+  if (line.startsWith('主題變更通知')) return { ...base, text: translate("通知改題，等你確認"), ...withDetail(tail(message.text)) };
+  if (line.startsWith('使用者更新題目')) return { ...base, text: translate("你更新了題目、目標或限制"), ...withDetail(tail(message.text)) };
   return { ...base, text: line, ...withDetail(tail(message.text)) };
 }
 
@@ -36,7 +37,7 @@ export function roomTimeline(state: RoomDiscussion, seats: Record<string, SeatVi
     const call = state.room.calls.find(candidate => candidate.id === command.callId); if (!call) return;
     // Place the grant after the moderator's own answer: a call is saved when it completes, not when it starts.
     const at = new Date(Date.parse(call.startedAt) + (call.durationMs ?? 0)).toISOString(), target = seatOf(seats, command.action.target);
-    entries.push({ at, order: state.messages.length + index, item: { kind: 'event', id: command.id, at, who: 'moderator', seat: target.id, text: `請 ${target.name} 發言`, detail: command.action.task } });
+    entries.push({ at, order: state.messages.length + index, item: { kind: 'event', id: command.id, at, who: 'moderator', seat: target.id, text: translate("請 {0} 發言", target.name), detail: command.action.task } });
   });
   return entries.sort((a, b) => a.at.localeCompare(b.at) || a.order - b.order).map(entry => entry.item);
 }

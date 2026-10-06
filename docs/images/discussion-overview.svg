@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="620" viewBox="0 0 1200 620" role="img" aria-labelledby="title desc">
+  <title id="title">CandC: independent perspectives, one discussion</title>
+  <desc id="desc">Conceptual overview. A user supplies a topic, goal and constraints to two to four independent speaker seats. An optional moderator coordinates public discussion. Peer-reviewed results preserve dissent and unknowns. Manual and automatic modes retain interim results; until-conclusion mode stops on a confirmed proposal. This is not a product screenshot or proof of factual accuracy.</desc>
+  <defs>
+    <linearGradient id="bg" x2="1" y2="1"><stop stop-color="#111b32"/><stop offset="1" stop-color="#202d46"/></linearGradient>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 8 4 0 8" fill="#aabbd4"/></marker>
+  </defs>
+  <rect width="1200" height="620" rx="24" fill="url(#bg)"/>
+  <g font-family="Segoe UI, Arial, sans-serif">
+    <text x="48" y="61" font-size="17" font-weight="700" fill="#99b9ff" letter-spacing="3">CANDC / LOCAL DISCUSSION ROOM</text>
+    <text x="48" y="109" font-size="34" font-weight="700" fill="#f4f7ff">Independent perspectives. One shared question.</text>
+    <text x="48" y="146" font-size="18" fill="#c4d0e4">Define the task, exchange arguments, and inspect the reviewed answer.</text>
+    <path d="M300 316H369" stroke="#aabbd4" stroke-width="2.5" marker-end="url(#arrow)"/>
+    <path d="M799 316H855" stroke="#aabbd4" stroke-width="2.5" marker-end="url(#arrow)"/>
+    <rect x="48" y="206" width="252" height="219" rx="16" fill="#263651" stroke="#506584"/>
+    <text x="72" y="240" font-size="14" font-weight="700" fill="#b7ccf7">01 / YOUR TASK</text>
+    <text x="72" y="284" font-size="25" font-weight="700" fill="#fff">Topic + context</text>
+    <text x="72" y="323" font-size="17" fill="#d4dff0">Goal and constraints</text>
+    <text x="72" y="353" font-size="17" fill="#d4dff0">Public or directed input</text>
+    <text x="72" y="395" font-size="15" fill="#bfd2f7">You can steer each round.</text>
+    <rect x="379" y="206" width="410" height="219" rx="16" fill="#263651" stroke="#506584"/>
+    <text x="403" y="240" font-size="14" font-weight="700" fill="#b7ccf7">02 / INDEPENDENT SPEAKERS</text>
+    <rect x="403" y="263" width="169" height="79" rx="10" fill="#183d46" stroke="#65c9bd"/>
+    <text x="421" y="294" font-size="21" font-weight="700" fill="#a8f1e4">Codex seat</text>
+    <text x="421" y="323" font-size="15" fill="#d4e8e7">Owned session</text>
+    <rect x="593" y="263" width="172" height="79" rx="10" fill="#423329" stroke="#dfab80"/>
+    <text x="611" y="294" font-size="21" font-weight="700" fill="#ffcfaa">Claude seat</text>
+    <text x="611" y="323" font-size="15" fill="#efddd0">Owned session</text>
+    <text x="403" y="375" font-size="17" fill="#d4dff0">2–4 seats / same provider allowed</text>
+    <text x="403" y="402" font-size="15" fill="#bfd2f7">One speaker generates at a time.</text>
+    <rect x="866" y="206" width="286" height="219" rx="16" fill="#263651" stroke="#506584"/>
+    <text x="890" y="240" font-size="14" font-weight="700" fill="#b7ccf7">03 / REVIEWED RESULTS</text>
+    <text x="890" y="284" font-size="25" font-weight="700" fill="#fff">Answer + review</text>
+    <text x="890" y="323" font-size="17" fill="#d4dff0">Retain dissent and unknowns</text>
+    <text x="890" y="353" font-size="17" fill="#d4dff0">Inspect original messages</text>
+    <text x="890" y="395" font-size="15" fill="#bfd2f7">Export Markdown or JSON</text>
+    <rect x="379" y="446" width="410" height="57" rx="12" fill="#34314e" stroke="#a5a0da"/>
+    <text x="401" y="480" font-size="17" fill="#e3dfff">Optional moderator / public coordination</text>
+    <rect x="48" y="532" width="1104" height="46" rx="10" fill="#152139"/>
+    <text x="72" y="562" font-size="16" fill="#d4dff0">Manual: review each round</text>
+    <text x="407" y="562" font-size="16" fill="#d4dff0">Auto: retain interim results</text>
+    <text x="759" y="562" font-size="16" fill="#d4dff0">Until conclusion: confirm and stop</text>
+    <text x="48" y="603" font-size="13" fill="#aebdd3">CONCEPTUAL OVERVIEW · Auto/interim behavior awaits a source commit. Peer confirmation does not independently verify facts.</text>
+  </g>
+</svg>

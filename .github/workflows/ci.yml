@@ -1,0 +1,45 @@
+name: Windows verification
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npx playwright install chromium
+      - run: npm run typecheck
+      - run: npm run test:coverage
+      - run: npm run build:isolated
+      - run: npm run test:e2e
+      - run: npm audit
+      - run: npm run secrets:scan
+      - run: npm run export:public
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: failure()
+        with:
+          name: verification-failure
+          path: |
+            .cache/playwright-results
+            .cache/coverage/coverage-summary.json
+          retention-days: 7
+          if-no-files-found: ignore

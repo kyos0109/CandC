@@ -1,5 +1,5 @@
-import { test, expect, choose, choice, createLegacy, closePanel, pick } from './fixtures';
-import type { Page, Locator } from '@playwright/test';
+import { test, expect, choose, choice, createLegacy, closePanel, pick, contrast } from './fixtures';
+import type { Page } from '@playwright/test';
 import path from 'node:path';
 
 async function capture(page: Page, name: string) {
@@ -122,21 +122,6 @@ for (const version of [2, 3]) test(`connection navigation preserves v${version} 
   await expect(page.getByRole('button', { name: '有新內容 · 回到最新訊息 ↓' })).toBeVisible();
   expect(errors).toEqual([]);
 });
-
-async function contrast(chip: Locator) {
-  return chip.evaluate(element => {
-    const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1; const context = canvas.getContext('2d')!;
-    const ancestors: Element[] = []; for (let current: Element | null = element; current; current = current.parentElement) ancestors.unshift(current);
-    context.fillStyle = 'white'; context.fillRect(0, 0, 1, 1);
-    for (const ancestor of ancestors) { context.fillStyle = getComputedStyle(ancestor).backgroundColor; context.fillRect(0, 0, 1, 1); }
-    const background = [...context.getImageData(0, 0, 1, 1).data].slice(0, 3);
-    const style = getComputedStyle(element); context.clearRect(0, 0, 1, 1); context.fillStyle = style.color; context.fillRect(0, 0, 1, 1);
-    const foreground = [...context.getImageData(0, 0, 1, 1).data].slice(0, 3);
-    const luminance = (rgb: number[]) => rgb.map(value => { const c = value / 255; return c <= .04045 ? c / 12.92 : ((c + .055) / 1.055) ** 2.4; }).reduce((sum, c, index) => sum + c * [0.2126, 0.7152, 0.0722][index]!, 0);
-    const a = luminance(foreground), b = luminance(background);
-    return { foreground, background, ratio: (Math.max(a, b) + .05) / (Math.min(a, b) + .05), font: style.fontSize };
-  });
-}
 
 for (const theme of ['light', 'dark']) test(`${theme} ready and confirmed status chips meet text contrast requirements`, async ({ page }) => {
   const errors = consoleErrors(page); await page.setViewportSize({ width: 1280, height: 900 });

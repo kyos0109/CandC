@@ -1,3 +1,4 @@
+import { translate } from './i18n.js';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 export function useNarrow(query: string) {
@@ -33,6 +34,6 @@ export function Inspector({ title, modal, onClose, children, side = 'right', foc
   }, [modal]);
   return <>{modal && <div className="drawer-backdrop" onClick={onClose}/>}
     <aside ref={container} className={`inspector ${modal ? 'overlay' : 'docked'} ${side}`} role={modal ? 'dialog' : 'complementary'} aria-modal={modal || undefined} aria-label={title}>
-      <header><h2>{title}</h2><button aria-label={`關閉${title}`} onClick={onClose}>×</button></header><div className="inspector-content">{children}</div>
+      <header><h2>{title}</h2><button aria-label={translate("關閉{0}", title)} onClick={onClose}>×</button></header><div className="inspector-content">{children}</div>
     </aside></>;
 }

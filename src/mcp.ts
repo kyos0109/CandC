@@ -1,9 +1,11 @@
-import { readFile, appendFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { ReadOnlyResearch, fetchPublicPage, validateRoots } from './research.js';
 import { safeError } from './redaction.js';
+import { appendEvidence } from './evidence-log.js';
+import type { Evidence } from './domain.js';
 
 const config = z.object({ roots: z.array(z.string()), evidenceFile: z.string() }).parse(JSON.parse(await readFile(process.argv[2]!, 'utf8')));
 const research = new ReadOnlyResearch(await validateRoots(config.roots));
@@ -13,7 +15,7 @@ const annotations = { readOnlyHint: true, destructiveHint: false, idempotentHint
 async function result(action: () => Promise<unknown>) {
   try {
     const value = await action();
-    if (value && typeof value === 'object' && 'sha256' in value) await appendFile(config.evidenceFile, JSON.stringify(value) + '\n');
+    if (value && typeof value === 'object' && 'sha256' in value) await appendEvidence(config.evidenceFile, value as Evidence);
     return { content: [{ type: 'text' as const, text: JSON.stringify(value) }] };
   } catch (error) { return { isError: true, content: [{ type: 'text' as const, text: safeError(error) }] }; }
 }

@@ -29,7 +29,7 @@
 
 /* Conversation */
 .conversation-region{position:relative;display:flex;flex:1;min-height:0}
-.messages{flex:1;min-height:0;overflow:auto;overflow-anchor:none;overscroll-behavior:contain;padding:20px 24px 12px;scrollbar-gutter:stable;scrollbar-width:thin;scrollbar-color:var(--line-strong) transparent}
+.messages{--pad-top:20px;flex:1;min-height:0;overflow:auto;overflow-anchor:none;overscroll-behavior:contain;padding:var(--pad-top) 24px 12px;scrollbar-gutter:stable;scrollbar-width:thin;scrollbar-color:var(--line-strong) transparent}
 .messages:focus-visible{outline-offset:-2px}
 .message,.day-divider,.round-divider,.process-notice{max-width:860px;margin-inline:auto}
 .message{display:grid;grid-template-columns:32px minmax(0,1fr);column-gap:12px;margin-bottom:22px}

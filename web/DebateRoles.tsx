@@ -1,3 +1,4 @@
+import { translate } from './i18n.js';
 import type { DiscussionInput } from '../src/domain';
 
 type Side = 'support' | 'oppose' | 'custom';
@@ -16,19 +17,19 @@ function describe(role: string): { side: Side; persona: string } {
   }
   return { side: 'custom', persona: role };
 }
-export const debateSide = (role: string) => ({ support: '支持方', oppose: '反對方', custom: '自訂立場' })[describe(role).side];
+export const debateSide = (role: string) => ({ support: translate("支持方"), oppose: translate("反對方"), custom: translate("自訂立場") })[describe(role).side];
 const build = (side: Side, persona: string) => side === 'custom' ? persona : positions[side] + (persona.trim() ? separator + persona : '');
 
 export function DebateRoles({ roles, onChange, disabled = false }: { roles: DiscussionInput['roles']; onChange: (roles: DiscussionInput['roles']) => void; disabled?: boolean }) {
-  return <div className="debate-roles"><p className="muted">依討論題目分配支持與反對立場。人設、語氣或額外要求可留白；已有自訂立場也可以保留。</p><div className="grid-two">{(['codex', 'claude'] as const).map(agent => {
+  return <div className="debate-roles"><p className="muted">{translate("依討論題目分配支持與反對立場。人設、語氣或額外要求可留白；已有自訂立場也可以保留。")}</p><div className="grid-two">{(['codex', 'claude'] as const).map(agent => {
     const role = describe(roles[agent]);
     const peer = agent === 'codex' ? 'claude' : 'codex';
     return <fieldset key={agent}><legend>{agent === 'codex' ? 'Codex' : 'Claude'}</legend>
-      <label>立場<select aria-label={`${agent === 'codex' ? 'Codex' : 'Claude'} 立場方向`} disabled={disabled} value={role.side} onChange={event => {
+      <label>{translate("立場")}<select aria-label={translate("{0} 立場方向", agent === 'codex' ? 'Codex' : 'Claude')} disabled={disabled} value={role.side} onChange={event => {
         const side = event.target.value as Side;
         onChange({ ...roles, [agent]: build(side, role.persona), ...(side === 'custom' ? {} : { [peer]: build(side === 'support' ? 'oppose' : 'support', describe(roles[peer]).persona) }) });
-      }}><option value="support">支持方</option><option value="oppose">反對方</option><option value="custom">自訂立場</option></select></label>
-      <label>{role.side === 'custom' ? '自訂立場' : '人設或補充要求（選填）'}<textarea aria-label={`${agent === 'codex' ? 'Codex' : 'Claude'} 立場`} rows={2} maxLength={role.side === 'custom' ? 4000 : 3000} disabled={disabled} value={role.persona} onChange={event => onChange({ ...roles, [agent]: build(role.side, event.target.value) })} placeholder={role.side === 'custom' ? '描述這位 AI 應採取的立場。' : '例如：務實的工程主管、尖銳但講證據；也可以留白。'}/></label>
+      }}><option value="support">{translate("支持方")}</option><option value="oppose">{translate("反對方")}</option><option value="custom">{translate("自訂立場")}</option></select></label>
+      <label>{role.side === 'custom' ? translate("自訂立場") : translate("人設或補充要求（選填）")}<textarea aria-label={translate("{0} 立場", agent === 'codex' ? 'Codex' : 'Claude')} rows={2} maxLength={role.side === 'custom' ? 4000 : 3000} disabled={disabled} value={role.persona} onChange={event => onChange({ ...roles, [agent]: build(role.side, event.target.value) })} placeholder={role.side === 'custom' ? translate("描述這位 AI 應採取的立場。") : translate("例如：務實的工程主管、尖銳但講證據；也可以留白。")}/></label>
     </fieldset>;
   })}</div></div>;
 }

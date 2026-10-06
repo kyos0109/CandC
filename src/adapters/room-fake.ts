@@ -11,7 +11,8 @@ export function fakeRoomResponse(request: TurnRequest): string {
   let text = `[示範 ${r.actor}] 依目前題目與限制補充分析。這是隔離測試回覆，沒有真實 AI 推論。`;
   let continuation: RoomControl['continuation'] = 'yield';
   if (r.actor === 'moderator') {
-    if (r.purpose === 'monitor') { action = { type: 'observe' }; text = '監看目前公開發言。'; }
+    if (r.openingSpeaker) { action = { type: 'observe' }; text = `今天討論「${request.topic}」，由 ${r.roster.filter(p => p.role === 'speaker').map(p => p.label ?? p.id).join('、')} 交流。先請 ${r.roster.find(p => p.id === r.openingSpeaker)?.label ?? r.openingSpeaker} 發言。`; }
+    else if (r.purpose === 'monitor') { action = { type: 'observe' }; text = '監看目前公開發言。'; }
     else if (r.purpose === 'summary') { action = { type: 'observe' }; text = '示範整理：保留公開觀點、分歧與尚待確認的資料。'; }
     else if (r.moderatorMode !== 'judge') { action = { type: 'observe' }; text = '請發言者依原題互相回應；尚有分歧時保留爭點。'; }
     else {
@@ -51,7 +52,8 @@ export class RoomFakeAdapter implements AgentAdapter {
     yield { type: 'session', session };
     const text = this.respond({ ...request, room: { ...room, messages: structuredClone(history) } });
     for (const chunk of text.match(/.{1,48}/gs) ?? []) {
-      await delay(this.delayMs, undefined, { signal: request.signal });
+      if (this.delayMs > 0) await delay(this.delayMs, undefined, { signal: request.signal });
+      else request.signal.throwIfAborted();
       yield { type: 'delta', text: chunk };
     }
     const parsed = parseRoomAnswer(text);

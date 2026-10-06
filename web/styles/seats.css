@@ -7,7 +7,7 @@
 .seat-avatar.k-claude{background:var(--claude-soft);color:var(--claude)}
 .seat-avatar.k-gemini{background:var(--gemini-soft);color:var(--gemini)}
 .seat-avatar.k-grok{background:var(--grok-soft);color:var(--grok)}
-.seat-avatar.alt{background:transparent;box-shadow:inset 0 0 0 1.5px currentColor}
+.seat-avatar.alt{background:transparent;color:var(--alt-seat);box-shadow:inset 0 0 0 1.5px currentColor}
 .seat-avatar.moderator{border-radius:10px;background:var(--moderator-soft);color:var(--moderator)}
 .seat-avatar.sm.moderator{border-radius:7px}
 .seat-avatar.me{background:var(--accent);color:var(--primary-text);font-size:12px}

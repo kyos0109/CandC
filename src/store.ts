@@ -1,3 +1,4 @@
+import { encode, decode, recordSchema, JournalCorruptionError, type JournalDiscussion, type StoredRecord } from './journal-codec.js';
 import { mkdir, open, readFile, readdir, rename, truncate, writeFile, unlink, type FileHandle } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
@@ -5,149 +6,12 @@ import { gzipSync } from 'node:zlib';
 import { isDeepStrictEqual } from 'node:util';
 import { z } from 'zod';
 import { AppError, discussionStateSchema, runEventSchema, type Discussion, type RunEvent } from './domain.js';
-import { roomStateSchema, type RoomDiscussion } from './room-contract.js';
+import { withJournalLock } from './journal-lock.js';
 
 const idSchema = z.uuid();
-type JournalDiscussion = Discussion | RoomDiscussion;
-type StoredRecord = { event: RunEvent; state: JournalDiscussion };
-class JournalCorruptionError extends Error {}
-const recordSchema = z.object({ event: runEventSchema, state: z.union([discussionStateSchema, roomStateSchema]) });
-const nestedPatchSchema = z.object({ set: z.record(z.string(), z.unknown()), append: z.record(z.string(), z.array(z.unknown())),
-  replace: z.record(z.string(), z.array(z.object({ index: z.number().int().nonnegative(), value: z.unknown() }).strict())) }).strict();
-const compactSchema = z.object({
-  version: z.union([z.literal(2), z.literal(3), z.literal(4)]), event: runEventSchema,
-  set: z.record(z.string(), z.unknown()),
-  append: z.record(z.string(), z.array(z.unknown())),
-  references: z.record(z.string(), z.object({ field: z.enum(['messages', 'evidence']), index: z.number().int().nonnegative() }).strict()),
-  focused: nestedPatchSchema.optional(), room: nestedPatchSchema.optional(),
-}).strict();
-
-function encode(record: StoredRecord, previous?: JournalDiscussion): string {
-  const set: Record<string, unknown> = {}, append: Record<string, unknown[]> = {};
-  for (const [key, value] of Object.entries(record.state)) {
-    if (key === 'v2' && previous?.v2) continue;
-    if (key === 'room' && previous?.behaviorVersion === 3) continue;
-    const old = previous ? (previous as unknown as Record<string, unknown>)[key] : undefined;
-    if (isDeepStrictEqual(old, value)) continue;
-    if (Array.isArray(old) && Array.isArray(value) && old.length <= value.length &&
-        old.every((item, index) => isDeepStrictEqual(item, value[index]))) {
-      append[key] = value.slice(old.length);
-    } else set[key] = value;
-  }
-  let room: z.infer<typeof nestedPatchSchema> | undefined;
-  if (record.state.behaviorVersion === 3 && previous?.behaviorVersion === 3) {
-    room = { set: {}, append: {}, replace: {} };
-    for (const [key, value] of Object.entries(record.state.room)) {
-      const old = previous.room[key as keyof typeof previous.room];
-      if (isDeepStrictEqual(old, value)) continue;
-      if (Array.isArray(old) && Array.isArray(value) && old.length <= value.length) {
-        const changed = old.flatMap((item, index) => isDeepStrictEqual(item, value[index]) ? [] : [{ index, value: value[index] }]);
-        if (changed.length) room.replace[key] = changed;
-        if (value.length > old.length) room.append[key] = value.slice(old.length);
-      } else room.set[key] = value;
-    }
-  }
-  let focused: z.infer<typeof compactSchema>['focused'];
-  if (record.state.v2 && previous?.v2) {
-    focused = { set: {}, append: {}, replace: {} };
-    for (const [key, value] of Object.entries(record.state.v2)) {
-      const old = previous.v2[key as keyof typeof previous.v2];
-      if (isDeepStrictEqual(old, value)) continue;
-      if (Array.isArray(old) && Array.isArray(value) && old.length <= value.length) {
-        const changed = old.flatMap((item, index) => isDeepStrictEqual(item, value[index]) ? [] : [{ index, value: value[index] }]);
-        if (changed.length) focused.replace[key] = changed;
-        if (value.length > old.length) focused.append[key] = value.slice(old.length);
-      } else focused.set[key] = value;
-    }
-  }
-  const data = { ...record.event.data };
-  const references: Record<string, { field: 'messages' | 'evidence'; index: number }> = {};
-  for (const [key, field] of [['message', 'messages'], ['evidence', 'evidence']] as const) {
-    if (!(key in data)) continue;
-    const index = record.state[field].findIndex(item => isDeepStrictEqual(item, data[key]));
-    if (index >= 0) { references[key] = { field, index }; delete data[key]; }
-  }
-  return JSON.stringify({ version: record.state.behaviorVersion === 3 ? 4 : record.state.behaviorVersion === 2 ? 3 : 2, event: { ...record.event, data }, set, append, references, ...(focused ? { focused } : {}), ...(room ? { room } : {}) });
+class JournalVersionConflict extends AppError {
+  constructor() { super('IDEMPOTENCY_CONFLICT', 'An existing journal cannot change behavior version.', 409); }
 }
-
-function decode(text: string, id: string, allowTail = false): StoredRecord[] {
-  const lines = text.split('\n'), records: StoredRecord[] = [];
-  for (let index = 0; index < lines.length; index++) {
-    const line = lines[index];
-    if (!line?.trim()) continue;
-    let parsed: unknown;
-    try { parsed = JSON.parse(line); }
-    catch {
-      if (index !== lines.length - 1 || !allowTail) throw new JournalCorruptionError('Discussion journal contains an invalid record.');
-      continue;
-    }
-    let candidate = parsed;
-    if (typeof parsed === 'object' && parsed !== null && 'version' in parsed) {
-      const compact = compactSchema.safeParse(parsed);
-      if (!compact.success) throw new JournalCorruptionError('Discussion journal contains an invalid compact schema.');
-      const { set, append, event, references, focused, room } = compact.data;
-      if (compact.data.version === 2 && focused) throw new JournalCorruptionError('Legacy compact records cannot carry focused patches.');
-      if (compact.data.version !== 4 && room) throw new JournalCorruptionError('Only version 4 can carry room patches.');
-      const state: Record<string, unknown> = { ...records.at(-1)?.state, ...set };
-      for (const [key, values] of Object.entries(append)) {
-        if (key in set || !['messages', 'evidence', 'operationIds', 'completedInRound', 'roots'].includes(key) || !Array.isArray(state[key])) {
-          throw new JournalCorruptionError('Discussion journal contains an invalid array change.');
-        }
-        state[key] = [...state[key], ...values];
-      }
-      if (focused) {
-        if ('v2' in set || !state.v2 || typeof state.v2 !== 'object') throw new JournalCorruptionError('Invalid focused patch base.');
-        const value: Record<string, unknown> = { ...state.v2, ...focused.set };
-        for (const key of new Set([...Object.keys(focused.replace), ...Object.keys(focused.append)])) {
-          if (key in focused.set || !['issues', 'receipts', 'calls', 'requests', 'operationRecords'].includes(key) || !Array.isArray(value[key])) throw new JournalCorruptionError('Invalid focused array patch.');
-          const array: unknown[] = [...value[key]];
-          const indices = new Set<number>();
-          for (const replacement of focused.replace[key] ?? []) {
-            if (replacement.index >= array.length || indices.has(replacement.index)) throw new JournalCorruptionError('Invalid focused replacement index.');
-            indices.add(replacement.index); array[replacement.index] = replacement.value;
-          }
-          value[key] = [...array, ...(focused.append[key] ?? [])];
-        }
-        state.v2 = value;
-      }
-      if (room) {
-        if ('room' in set || !state.room || typeof state.room !== 'object') throw new JournalCorruptionError('Invalid room patch base.');
-        const value: Record<string, unknown> = { ...state.room, ...room.set };
-        for (const key of new Set([...Object.keys(room.replace), ...Object.keys(room.append)])) {
-          if (key in room.set || !['muted', 'calls', 'commands', 'topicHistory', 'operations'].includes(key) || !Array.isArray(value[key])) throw new JournalCorruptionError('Invalid room array patch.');
-          const array: unknown[] = [...value[key]], indices = new Set<number>();
-          for (const replacement of room.replace[key] ?? []) {
-            if (replacement.index >= array.length || indices.has(replacement.index)) throw new JournalCorruptionError('Invalid room replacement index.');
-            indices.add(replacement.index); array[replacement.index] = replacement.value;
-          }
-          value[key] = [...array, ...(room.append[key] ?? [])];
-        }
-        state.room = value;
-      }
-      const data = { ...event.data };
-      for (const [key, reference] of Object.entries(references)) {
-        const values = state[reference.field];
-        if (key in data || !Array.isArray(values) || reference.index >= values.length) {
-          throw new JournalCorruptionError('Discussion journal contains an invalid event reference.');
-        }
-        data[key] = values[reference.index];
-      }
-      candidate = { state, event: { ...event, data } };
-    }
-    const validated = recordSchema.safeParse(candidate);
-    if (!validated.success) throw new JournalCorruptionError('Discussion journal contains an invalid schema.');
-    const record = validated.data;
-    if ((record.state.behaviorVersion === 2 || record.state.behaviorVersion === 3) && !record.event.commitId) throw new JournalCorruptionError('Versioned discussions require a journal commit identity.');
-    if (records.length && record.state.behaviorVersion !== records.at(-1)!.state.behaviorVersion) throw new JournalCorruptionError('Discussion behavior cannot change inside a journal.');
-    if (record.state.id !== id || record.event.discussionId !== id || record.state.sequence !== record.event.sequence ||
-        record.event.sequence !== (records.at(-1)?.event.sequence ?? 0) + 1) {
-      throw new JournalCorruptionError('Discussion journal has inconsistent identifiers or sequence numbers.');
-    }
-    records.push(record);
-  }
-  return records;
-}
-
 export class DiscussionStore<T extends JournalDiscussion = Discussion> {
   private readonly latest = new Map<string, T>();
   private readonly blocked = new Map<string, { reason: string; pending?: PendingCommit }>();
@@ -160,6 +24,9 @@ export class DiscussionStore<T extends JournalDiscussion = Discussion> {
     return path.join(this.directory, `${idSchema.parse(id)}.${extension}`);
   }
   async commit(state: T, event: RunEvent): Promise<void> {
+    return withJournalLock(this.file(state.id, 'jsonl'), () => this.commitLocked(state, event));
+  }
+  private async commitLocked(state: T, event: RunEvent): Promise<void> {
     if (this.blocked.has(state.id)) throw new AppError('STORAGE_UNCONFIRMED', 'Journal storage is unconfirmed; explicit recovery is required.');
     // Cache and pending digests use the same JSON representation as durable replay (including omission of optional undefined keys).
     const validated = recordSchema.safeParse(JSON.parse(JSON.stringify({ state, event })));
@@ -169,6 +36,8 @@ export class DiscussionStore<T extends JournalDiscussion = Discussion> {
     const pending: PendingCommit = { sequence: event.sequence, type: event.type, commitId: event.commitId ?? null, digestFormat: 'canonical-v1', digest: digest(record, true) };
     try { await this.append(record); }
     catch (error) {
+      // A version collision is detected before opening the append handle.
+      if (error instanceof JournalVersionConflict) throw error;
       this.latest.delete(state.id);
       this.blocked.set(state.id, { reason: 'Journal storage is unconfirmed; explicit recovery is required.', pending });
       // Best effort failure metadata is outside the journal. Recovery never assumes it exists after restart.
@@ -184,6 +53,9 @@ export class DiscussionStore<T extends JournalDiscussion = Discussion> {
     try { text = await readFile(journal, 'utf8'); }
     catch (error) { if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error; }
     const previous = decode(text, state.id).at(-1)?.state;
+    if (previous && previous.behaviorVersion !== state.behaviorVersion) {
+      throw new JournalVersionConflict();
+    }
     const cached = this.latest.get(state.id);
     if (cached && !isDeepStrictEqual(cached, previous)) throw new JournalCorruptionError('Journal changed outside the current writer; explicit recovery is required.');
     if (event.discussionId !== state.id || state.sequence !== event.sequence || event.sequence !== (previous?.sequence ?? 0) + 1) {
@@ -206,6 +78,9 @@ export class DiscussionStore<T extends JournalDiscussion = Discussion> {
     return decode(await readFile(this.file(id, 'jsonl'), 'utf8'), id, this.blocked.has(id)).map(r => ({ ...r, state: this.typed(r.state) }));
   }
   async recover(id: string, repairTail = false): Promise<{ state: T | null; outcome: 'adopted' | 'not-committed' | 'verified'; backup: string | null }> {
+    return withJournalLock(this.file(id, 'jsonl'), () => this.recoverLocked(id, repairTail));
+  }
+  private async recoverLocked(id: string, repairTail: boolean): Promise<{ state: T | null; outcome: 'adopted' | 'not-committed' | 'verified'; backup: string | null }> {
     this.latest.delete(id);
     const journal = this.file(id, 'jsonl');
     const text = await readFile(journal, 'utf8');
@@ -259,6 +134,9 @@ export class DiscussionStore<T extends JournalDiscussion = Discussion> {
   }
   // Offline only: stop the server before replacing journals. Backups are never removed here.
   async compact(id: string): Promise<{ before: number; after: number; backup: string | null }> {
+    return withJournalLock(this.file(id, 'jsonl'), () => this.compactLocked(id));
+  }
+  private async compactLocked(id: string): Promise<{ before: number; after: number; backup: string | null }> {
     if (this.blocked.has(id)) throw new AppError('STORAGE_UNCONFIRMED', 'Recover storage before offline compaction.');
     const journal = this.file(id, 'jsonl'), original = await readFile(journal, 'utf8');
     const records = decode(original, id);

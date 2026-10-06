@@ -1,7 +1,36 @@
 import { test, expect, choose, settings, closePanel } from './fixtures';
 import path from 'node:path';
 
-test('ordinary facilitator is the default, speakers lead and explicitly confirm the same result', async ({ page }) => {
+test('English facilitator creation preserves opening content across language switches and reload', async ({ page }) => {
+  const language = async (locale: 'en' | 'zh-TW') => {
+    await page.getByRole('button', { name: /^(閱讀設定|Reading settings)$/ }).click();
+    await page.getByRole('combobox', { name: 'Language / 語言' }).selectOption(locale);
+    await expect(page.locator('html')).toHaveAttribute('lang', locale); await closePanel(page);
+  };
+  await page.goto('/'); await language('en'); await choose(page, 'Response source', 'fake');
+  await page.getByRole('switch', { name: 'Enable independent moderator' }).check();
+  await expect(page.getByRole('checkbox', { name: 'Moderator judge mode' })).not.toBeChecked();
+  await choose(page, 'Run mode', 'conclusion');
+  const topic = 'Original topic / 原始題目 {0}';
+  await page.getByRole('textbox', { name: 'Discussion topic', exact: true }).fill(topic);
+  await page.getByRole('button', { name: 'Create and start discussion →' }).click();
+  await expect(page.locator('.room-outcome')).toContainText('Conclusion completed');
+  const id = await page.evaluate(() => localStorage.getItem('candc-discussion'));
+  await expect.poll(async () => (await (await page.request.get(`/api/discussions/${id}`)).json()).activity).toBeNull();
+  const saved = await (await page.request.get(`/api/discussions/${id}`)).json();
+  expect(saved.room.calls[0]).toMatchObject({ participant: 'moderator', openingSpeaker: 'codex' });
+  const opening = saved.messages.find((m: any) => m.id === saved.room.calls[0].id);
+  await expect(page.locator('.message.speaker-moderator').filter({ hasText: opening.text })).toHaveCount(1);
+  await language('zh-TW'); await expect(page.locator('.room-outcome')).toContainText('已完成結論');
+  await expect(page.locator('.message.speaker-moderator').filter({ hasText: opening.text })).toHaveCount(1);
+  await language('en'); await page.reload(); await expect(page.locator('html')).toHaveAttribute('lang', 'en');
+  await expect(page.locator('.discussion-heading h1')).toHaveText(topic);
+  await expect(page.locator('.message.speaker-moderator').filter({ hasText: opening.text })).toHaveCount(1);
+  const reloaded = await (await page.request.get(`/api/discussions/${saved.id}`)).json();
+  expect(reloaded.messages).toEqual(saved.messages); expect(reloaded.room.calls).toEqual(saved.room.calls);
+});
+
+test('ordinary facilitator opens once, speakers lead and explicitly confirm the same result', async ({ page }) => {
   const errors: string[] = []; page.on('pageerror', e => errors.push(e.message));
   await page.goto('/'); await choose(page, '回覆來源', 'fake');
   await page.getByRole('switch', { name: '啟用獨立主持人' }).check();
@@ -12,7 +41,10 @@ test('ordinary facilitator is the default, speakers lead and explicitly confirm 
   await expect(page.locator('.room-outcome')).toContainText('已完成結論');
   const state = await page.evaluate(async () => (await (await fetch('/api/discussions')).json()).find((s: any) => s.topic === 'Ordinary moderator fixture.'));
   expect(state.moderatorMode).toBe('facilitator'); expect(state.room.outcome.authority).toBe('participants');
-  expect(state.room.calls.slice(0, 2).map((c: any) => c.participant)).toEqual(['codex', 'claude']);
+  expect(state.room.calls.slice(0, 3).map((c: any) => c.participant)).toEqual(['moderator', 'codex', 'claude']);
+  const opening = state.room.calls[0]; expect(opening.openingSpeaker).toBe('codex');
+  expect(state.messages.find((m: any) => m.id === opening.id).text).toContain('先請 codex 發言');
+  expect(state.messages.filter((m: any) => m.sender !== 'user').slice(0, 3).map((m: any) => m.sender)).toEqual(['moderator', 'codex', 'claude']);
   expect(state.room.calls.filter((c: any) => c.purpose === 'monitor')).toHaveLength(0);
   await settings(page); await expect(page.getByRole('checkbox', { name: '主持人裁判模式' })).toBeEnabled();
   await page.getByRole('checkbox', { name: '主持人裁判模式' }).check();
@@ -23,6 +55,7 @@ test('ordinary facilitator is the default, speakers lead and explicitly confirm 
   await expect.poll(async () => (await (await page.request.get('/api/discussions/' + state.id)).json()).moderatorMode).toBe('facilitator');
   const changed = await (await page.request.get('/api/discussions/' + state.id)).json();
   expect(changed.room.calls).toHaveLength(state.room.calls.length); expect(changed.room.sessions).toEqual({}); expect(changed.activity).toBeNull();
+  expect(changed.room.calls.filter((c: any) => c.openingSpeaker)).toHaveLength(1);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole('heading', { name: '主持人權限' }).scrollIntoViewIfNeeded();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

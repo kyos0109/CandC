@@ -93,10 +93,11 @@ describe('conclusion delivery and independent review (deterministic, not semanti
     const ctx = await setup(r => r.room!.proposal ? { type: 'confirm', proposalId: r.room!.proposal.id, review: approved } : proposal(topic), { topic });
     const s = await ctx.run(); expect(s.room.outcome?.result).toBe(topic);
     const prompts = ctx.requests.map(r => JSON.parse(buildPrompt(r)));
-    expect(prompts.every(p => p.conclusionPolicy === conclusionPolicy)).toBe(true);
-    expect(prompts[0].conclusionPolicy).toContain('no domain, scenario, fixed stages');
-    expect(prompts[0].conclusionPolicy).toContain('unless the user requested a plan');
-    expect(prompts[0].conclusionPolicy).toContain('creative forms remain valid');
+    expect(prompts[0].conclusionPolicy).toBeUndefined();
+    expect(prompts[1].conclusionPolicy).toBe(conclusionPolicy);
+    expect(prompts[1].conclusionPolicy).toContain('no domain, scenario, fixed stages');
+    expect(prompts[1].conclusionPolicy).toContain('unless the user requested a plan');
+    expect(prompts[1].conclusionPolicy).toContain('creative forms remain valid');
   });
   it('manual boundaries still stop after one round even when a reviewer requests revision', async () => {
     const ctx = await setup(r => r.room!.proposal ? { type: 'confirm', proposalId: r.room!.proposal.id, review: { adequate: false, reason: 'Requested answer is incomplete.', gaps: ['Missing explanation.'] } } : proposal(), { mode: 'manual' });

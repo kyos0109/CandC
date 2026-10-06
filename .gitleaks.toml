@@ -1,0 +1,9 @@
+title = "CandC secret scan"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Exact synthetic JWT used only by credential-redaction regression tests"
+regexTarget = "secret"
+regexes = ['''^eyJhbGciOiJIUzI1NiJ9\.eyJzdWIiOiJmaXh0dXJlIn0\.c3ludGhldGljc2lnbmF0dXJl$''']
