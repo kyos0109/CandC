@@ -32,6 +32,10 @@ handoffs are retained in Git history, not active development instructions.
   their supported issue/history controls. Do not recreate the removed two-agent form.
 - Connection navigation preserves the creation form, composer, recipient, quotation,
   selected discussion and scroll-follow state. Opening a panel never starts inference.
+- The creation form loads with the application. Version 3 rooms, legacy discussion
+  views and connection settings load on first use, with localized loading statuses.
+  Connection settings use a separate loading boundary so the current workspace
+  remains mounted while their code loads.
 
 ## Creation and privacy
 

@@ -123,7 +123,7 @@ describe.skipIf(process.platform !== 'win32')('Windows start/stop launchers with
       await mkdir(path.join(root, 'scripts'));
       await mkdir(path.join(root, 'node_modules'));
       await mkdir(path.join(root, 'dist'));
-      for (const file of ['start.ps1', 'stop.ps1', 'launcher-common.ps1']) {
+      for (const file of ['start.ps1', 'stop.ps1', 'launcher-common.ps1', 'launcher.mjs', 'install.mjs']) {
         await copyFile(path.join(scripts, file), path.join(root, 'scripts', file));
       }
       // Stub only the build; the launcher owns a real disposable Node HTTP process.

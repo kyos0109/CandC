@@ -9,6 +9,7 @@ import { JsonLineProcess, RpcConnection, RpcRejectionError, type ProcessFactory 
 import { assertLiveAuthorized, buildPrompt, type AgentAdapter, type AgentEvent, type LiveAuthorization, type TurnRequest } from './types.js';
 import { researchConfig, readEvidence } from './research-config.js';
 import path from 'node:path';
+import { homedir } from 'node:os';
 
 const threadResponse = z.object({ thread: z.object({ id: z.string().min(1) }), model: z.string() });
 const turnResponse = z.object({ turn: z.object({ id: z.string().min(1) }) });
@@ -44,7 +45,7 @@ export async function inheritedMcpNames(executable: string, cwd: string, signal:
     return Object.keys(config.config.mcp_servers);
   } catch (error) { observe(observer, 'failureObserved'); throw error; } finally { observe(observer, 'inspectCleanupStart'); await child.close(); observe(observer, 'inspectCleanupEnd'); }
 }
-const codexEnv = (): NodeJS.ProcessEnv => ({ ...globalThis.process.env, CODEX_HOME: globalThis.process.env.CANDC_CODEX_HOME ?? globalThis.process.env.CODEX_HOME ?? path.join(globalThis.process.env.USERPROFILE ?? globalThis.process.env.HOME ?? '', '.codex') });
+const codexEnv = (): NodeJS.ProcessEnv => ({ ...globalThis.process.env, CODEX_HOME: globalThis.process.env.CANDC_CODEX_HOME ?? globalThis.process.env.CODEX_HOME ?? path.join(homedir(), '.codex') });
 
 export function codexArguments(research = false, mcp?: { command: string; args: string[] }, inherited: string[] = []): string[] {
   if (inherited.some((name) => !/^[A-Za-z0-9_-]+$/.test(name))) throw new AppError('POLICY_MISMATCH', 'Inherited MCP names cannot be safely overridden.');

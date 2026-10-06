@@ -10,6 +10,8 @@
     "dev": "npm run build && node dist/main.js",
     "build": "tsc -p tsconfig.build.json && vite build",
     "build:isolated": "node scripts/build-isolated.mjs",
+    "package:release": "node scripts/package-release.mjs",
+    "test:install": "node scripts/verify-install.mjs",
     "start": "node dist/main.js",
     "typecheck": "tsc --noEmit && tsc -p web/tsconfig.json",
     "test": "vitest run",

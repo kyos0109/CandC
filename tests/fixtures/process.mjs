@@ -1,3 +1,4 @@
+import { spawn } from 'node:child_process';
 const scenario = process.argv[2];
 if (scenario === 'fragmented') {
   process.stdout.write('{"text":"first');
@@ -22,6 +23,16 @@ if (scenario === 'fragmented') {
     for (let index = 0; index < 10; index++) {
       if (!process.stdout.write(line)) await new Promise(resolve => process.stdout.once('drain', resolve));
     }
+  });
+} else if (scenario === 'tree') {
+  const descendant = spawn(process.execPath, ['-e', 'process.on("SIGTERM", () => {}); console.log(process.pid); setInterval(() => {}, 1000);'], { stdio: ['ignore', 'pipe', 'inherit'] });
+  descendant.stdout.once('data', chunk => process.stdout.write(JSON.stringify({ ready: true, descendant: Number(chunk.toString().trim()) }) + '\n'));
+  process.on('SIGTERM', () => {});
+  setInterval(() => undefined, 1000);
+} else if (scenario === 'orphan') {
+  const descendant = spawn(process.execPath, ['-e', 'console.log(process.pid); setInterval(() => {}, 1000);'], { stdio: ['ignore', 'pipe', 'inherit'] });
+  descendant.stdout.once('data', chunk => {
+    process.stdout.write(JSON.stringify({ ready: true, descendant: Number(chunk.toString().trim()) }) + '\n', () => process.exit(0));
   });
 } else if (scenario === 'echo') {
   let input = '';

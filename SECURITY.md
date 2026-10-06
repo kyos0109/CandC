@@ -2,7 +2,7 @@
 
 ## Scope and trust boundary
 
-CandC is a Windows-first, local single-user application. It listens on
+CandC is a Windows/macOS/Linux local single-user application. It listens on
 `127.0.0.1` and requires matching Host/Origin and an HttpOnly SameSite=Strict
 session cookie or bearer token on protected routes. It is not a multi-user
 service. Local processes can obtain a session from `/api/session`; OS account

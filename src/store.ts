@@ -10,6 +10,7 @@ import { withJournalLock } from './journal-lock.js';
 import { folderOf } from './management.js';
 
 const idSchema = z.uuid();
+const deletionSuffix = /^(jsonl|unconfirmed\.json|jsonl\.compacting|jsonl\.(?:backup|recovery)-\d+\.gz)$/;
 class JournalVersionConflict extends AppError {
   constructor() { super('IDEMPOTENCY_CONFLICT', 'An existing journal cannot change behavior version.', 409); }
 }
@@ -17,6 +18,7 @@ export class DiscussionStore<T extends JournalDiscussion = Discussion> {
   private readonly latest = new Map<string, T>();
   private readonly blocked = new Map<string, { reason: string; pending?: PendingCommit }>();
   private readonly deleted = new Set<string>();
+  private readonly deletionMarkers = new Map<string, { fingerprint: string; expectedSequence: number }>();
   constructor(private readonly directory: string, private readonly fault?: StorageFault,
     private readonly stateContract: z.ZodType<T> = discussionStateSchema as unknown as z.ZodType<T>) {}
   private typed(state: JournalDiscussion): T { return this.stateContract.parse(state); }
@@ -33,23 +35,43 @@ export class DiscussionStore<T extends JournalDiscussion = Discussion> {
     catch (error) { if (missing(error)) return false; throw error; }
   }
   private deletionFiles(id: string, files: string[]) {
-    const suffix = /^(jsonl|unconfirmed\.json|jsonl\.compacting|jsonl\.(?:backup|recovery)-\d+\.gz)$/;
-    return files.filter(name => name.startsWith(`${id}.`) && suffix.test(name.slice(id.length + 1)));
+    return files.filter(name => name.startsWith(`${id}.`) && deletionSuffix.test(name.slice(id.length + 1)));
   }
   async deletionIssues(): Promise<Array<{ id: string; reason: string; expectedSequence?: number }>> {
     await mkdir(this.directory, { recursive: true });
     const files = await readdir(this.directory), issues: Array<{ id: string; reason: string; expectedSequence?: number }> = [];
+    const remaining = new Set<string>(), ids: string[] = [];
     for (const name of files) {
-      if (!name.endsWith('.deleted.json')) continue;
-      const id = name.slice(0, -13); if (!idSchema.safeParse(id).success) continue;
-      this.deleted.add(id); this.latest.delete(id); this.blocked.delete(id);
-      try {
-        const file = this.file(id, 'deleted.json');
-        if (!(await lstat(file)).isFile() || (await lstat(file)).isSymbolicLink()) throw new Error('Invalid deletion marker file.');
-        const marker = deletionSchema.parse(JSON.parse(await readFile(file, 'utf8')));
-        if (marker.id !== id) throw new Error('Deletion marker ID mismatch.');
-        if (this.deletionFiles(id, files).length) issues.push({ id, reason: 'Deletion is incomplete. Retry permanent deletion.', expectedSequence: marker.expectedSequence });
-      } catch { issues.push({ id, reason: 'Deletion marker is unconfirmed. Preserve the files for inspection.' }); }
+      const dot = name.indexOf('.');
+      if (deletionSuffix.test(name.slice(dot + 1))) remaining.add(name.slice(0, dot));
+      if (name.endsWith('.deleted.json') && idSchema.safeParse(name.slice(0, -13)).success) ids.push(name.slice(0, -13));
+    }
+    const present = new Set(ids);
+    for (const id of this.deletionMarkers.keys()) if (!present.has(id)) this.deletionMarkers.delete(id);
+    // Bound filesystem concurrency; completed markers are parsed again only when their metadata changes.
+    for (let offset = 0; offset < ids.length; offset += 32) {
+      const results = await Promise.all(ids.slice(offset, offset + 32).map(async id => {
+        this.deleted.add(id); this.latest.delete(id); this.blocked.delete(id);
+        try {
+          const file = this.file(id, 'deleted.json');
+          const info = await lstat(file, { bigint: true });
+          if (!info.isFile() || info.isSymbolicLink()) throw new Error('Invalid deletion marker file.');
+          const fingerprint = [info.dev, info.ino, info.size, info.mtimeNs, info.ctimeNs].join(':');
+          let marker = this.deletionMarkers.get(id);
+          if (marker?.fingerprint !== fingerprint) {
+            const parsed = deletionSchema.parse(JSON.parse(await readFile(file, 'utf8')));
+            if (parsed.id !== id) throw new Error('Deletion marker ID mismatch.');
+            marker = { fingerprint, expectedSequence: parsed.expectedSequence };
+            this.deletionMarkers.set(id, marker);
+          }
+          if (remaining.has(id)) return { id, reason: 'Deletion is incomplete. Retry permanent deletion.', expectedSequence: marker.expectedSequence };
+        } catch {
+          this.deletionMarkers.delete(id);
+          return { id, reason: 'Deletion marker is unconfirmed. Preserve the files for inspection.' };
+        }
+        return undefined;
+      }));
+      for (const issue of results) if (issue) issues.push(issue);
     }
     return issues;
   }

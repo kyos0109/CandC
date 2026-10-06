@@ -19,7 +19,7 @@ const messageBody = z.object({ messageId: z.uuid(), text: z.string().trim().min(
   recipient: z.union([participantSchema, z.literal('both'), z.literal('all')]).default('both') }).strict();
 
 export function createServer(controller: DiscussionController | DiscussionService, options: { accessToken?: string; disconnectGraceMs?: number;
-  webRoot?: string; environment?: () => Promise<EnvironmentStatus>; models?: typeof codexCatalog; testFixture?: boolean } = {}) {
+  webRoot?: string; environment?: () => Promise<EnvironmentStatus>; models?: typeof codexCatalog; testFixture?: boolean; instanceId?: string } = {}) {
   const token = options.accessToken ?? randomBytes(32).toString('hex');
   const server = Fastify({ logger: false, bodyLimit: 128 * 1024, requestTimeout: 30_000 });
 
@@ -46,7 +46,8 @@ export function createServer(controller: DiscussionController | DiscussionServic
     return reply.code(status).send({ error: status < 500 ? 'INVALID_REQUEST' : 'INTERNAL_ERROR' });
   });
 
-  server.get('/health', async () => ({ application: 'candc', testFixture: options.testFixture === true, status: 'ok', phase: 2, backend: 'selectable', liveMessagesEnabled: true }));
+  server.get('/health', async () => ({ application: 'candc', testFixture: options.testFixture === true, status: 'ok', phase: 2, backend: 'selectable', liveMessagesEnabled: true,
+    ...(options.instanceId ? { instanceId: options.instanceId } : {}) }));
   server.get('/api/session', async (_request, reply) => {
     reply.header('Set-Cookie', `candc_session=${token}; HttpOnly; SameSite=Strict; Path=/`);
     return { backend: 'selectable', phase: 2, liveMessagesEnabled: true };

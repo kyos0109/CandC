@@ -1,0 +1,76 @@
+name: Prepare release draft
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag matching package.json (vX.Y.Z)
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ inputs.tag }}
+  cancel-in-progress: false
+jobs:
+  verify:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-14, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: refs/tags/${{ inputs.tag }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Validate existing tag and package version
+        env:
+          CANDC_RELEASE_TAG: ${{ inputs.tag }}
+        run: node -e "const fs=require('node:fs'),cp=require('node:child_process'); const tag=process.env.CANDC_RELEASE_TAG; if(!/^v\d+\.\d+\.\d+(-[A-Za-z0-9]+([.-][A-Za-z0-9]+)*)?$/.test(tag)||tag!=='v'+JSON.parse(fs.readFileSync('package.json')).version) process.exit(1); cp.execFileSync('git',['show-ref','--verify','refs/tags/'+tag]);"
+      - run: npm ci --ignore-scripts
+      - run: npx playwright install --with-deps chromium
+      - run: npm run typecheck
+      - run: npm run test:coverage -- --maxWorkers 1
+      - run: npm run build:isolated
+      - run: npm run test:e2e
+      - run: npm run test:install
+      - run: npm audit
+      - run: npm run secrets:scan
+        if: runner.os == 'Windows'
+      - run: npm run export:public
+        if: runner.os == 'Windows'
+      - name: Package verified runtime and repository-specific installer
+        if: runner.os == 'Windows'
+        env:
+          CANDC_RELEASE_REPO: ${{ github.repository }}
+        run: node scripts/package-release.mjs --build .cache/verification --repo $env:CANDC_RELEASE_REPO --output .cache/release-candidate
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: runner.os == 'Windows'
+        with:
+          name: release-candidate
+          path: .cache/release-candidate/*
+          if-no-files-found: error
+          retention-days: 7
+  draft:
+    needs: verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - name: Download candidate and create draft (does not publish)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          CANDC_RELEASE_TAG: ${{ inputs.tag }}
+          CANDC_RUN_ID: ${{ github.run_id }}
+        run: |
+          gh run download "$CANDC_RUN_ID" --name release-candidate --dir candidate
+          gh release create "$CANDC_RELEASE_TAG" candidate/* --verify-tag --draft --title "CandC $CANDC_RELEASE_TAG" --notes "Cross-platform runtime, installation scripts and SHA-256 checksums. Review the draft before publishing. Requires Node.js 24."

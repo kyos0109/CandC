@@ -38,6 +38,15 @@ that ID conflicts. A later changed sequence requires a refresh.
   browser loads complete state only for the selected discussion; all running
   discussions remain subscribed across history pages/folders. Existing full-list
   and JSON/Markdown export shapes remain supported.
+- History query changes are debounced by 200 ms and refresh only the index, without
+  reloading selected content or storage diagnostics. Selected detail refreshes on
+  selection, its SSE events, explicit operations and transport recovery. Background
+  SSE events refresh the index/diagnostics without reloading unrelated detail.
+  Two-second fallback polling remains available while any discussion is running or
+  its transport is disconnected; healthy idle subscriptions do not poll. A pending
+  polling refresh must finish before another polling refresh starts.
+  Normal subscription creation/replacement does not show a reconnect warning.
+  Transport errors show the warning; it clears after every subscribed stream opens.
 - `POST /api/discussions/:id/management`: strict body with `action` of
   `archive|unarchive|trash|restore`, UUID `operationId` and positive integer
   `expectedSequence`. Returns the saved complete state.
@@ -81,6 +90,14 @@ again and removes remaining allowlisted files. A valid marker does not need to
 reuse the original request operation ID. Corrupt/empty/non-regular markers require
 inspection; they expose no retry sequence and never authorize further deletion.
 Minimal markers remain after successful deletion to prevent ID reuse.
+
+Marker diagnostics index remaining allowlisted files in one directory pass, with
+at most 32 concurrent marker checks per scan. Parsed valid markers are reused only
+while file identity, size and modification/change timestamps remain unchanged;
+metadata is checked on every scan and the cache is rebuilt after restart. Invalid
+markers still produce inspection warnings even without residual content. Permanent
+deletion independently rereads and validates the marker before syncing/removing
+files; diagnostic caching never authorizes deletion.
 
 Journal storage uncertainty blocks management/deletion until explicit recovery.
 Recovery does not change folders or auto-resend unknown-result turns. New optional

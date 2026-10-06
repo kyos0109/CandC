@@ -3,6 +3,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
+import { homedir } from 'node:os';
 import { z } from 'zod';
 import { codexArguments } from './adapters/codex.js';
 import { JsonLineProcess, RpcConnection } from './adapters/process.js';
@@ -13,7 +14,7 @@ import type { ProviderId, RoomDiscussion } from './room-contract.js';
 const execute = promisify(execFile);
 export const executablePaths = () => ({ codex: process.env.CANDC_CODEX_PATH ?? 'codex', claude: process.env.CANDC_CLAUDE_PATH ?? 'claude',
   gemini: process.env.CANDC_GEMINI_PATH ?? 'gemini', grok: process.env.CANDC_GROK_PATH ?? 'grok' });
-export const codexEnvironment = (): NodeJS.ProcessEnv => ({ ...process.env, CODEX_HOME: process.env.CANDC_CODEX_HOME ?? process.env.CODEX_HOME ?? path.join(process.env.USERPROFILE ?? process.env.HOME ?? '', '.codex') });
+export const codexEnvironment = (): NodeJS.ProcessEnv => ({ ...process.env, CODEX_HOME: process.env.CANDC_CODEX_HOME ?? process.env.CODEX_HOME ?? path.join(homedir(), '.codex') });
 async function output(executable: string, args: string[], observer?: PerformanceObserver) {
   try { const running = execute(executable, args, { windowsHide: true, timeout: 10_000, maxBuffer: 256 * 1024, env: executable === executablePaths().codex ? codexEnvironment() : process.env }); running.child.once('spawn', () => observe(observer, 'loginProcessStarted')); const result = await running; return result.stdout || result.stderr; }
   catch (error) {

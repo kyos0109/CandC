@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { readFile } from 'node:fs/promises';
 import { JsonLineProcess, RpcConnection, RpcRejectionError, type JsonConnection } from '../src/adapters/process.js';
 
 const fixture = path.resolve('tests/fixtures/process.mjs');
@@ -9,6 +10,31 @@ const connection = (scenario: string, signal = new AbortController().signal) => 
 });
 
 describe('owned local fixture processes', () => {
+  it.skipIf(process.platform === 'win32').each(['tree', 'orphan'])('cleans the POSIX group including descendants: %s', async scenario => {
+    const abort = new AbortController();
+    const child = new JsonLineProcess({ executable: process.execPath, args: [fixture, scenario], cwd: process.cwd(), signal: abort.signal });
+    let pid: number | undefined;
+    try {
+      const ready = await child.next() as { ready: boolean; descendant: number }; pid = ready.descendant;
+      expect(ready.ready).toBe(true);
+      if (scenario === 'orphan') await new Promise(resolve => setTimeout(resolve, 100)); else abort.abort();
+      await child.close();
+      let running = true;
+      const deadline = Date.now() + 2_000;
+      do {
+        try {
+          process.kill(pid, 0);
+          // Linux can retain a dead orphan as a zombie until its reaper runs.
+          if (process.platform === 'linux') running = !/\) Z /.test(await readFile(`/proc/${pid}/stat`, 'utf8'));
+        } catch (error) { if (['ESRCH', 'ENOENT'].includes((error as NodeJS.ErrnoException).code ?? '')) running = false; else throw error; }
+        if (running) await new Promise(resolve => setTimeout(resolve, 25));
+      } while (running && Date.now() < deadline);
+      expect(running).toBe(false);
+    } finally {
+      if (pid) { try { process.kill(pid, 'SIGKILL'); } catch { /* Already exited. */ } }
+      await child.close();
+    }
+  }, 8_000);
   it.each([
     { code: 'private-code', message: 'private provider prompt', data: { token: 'private-token' } },
     { code: 1.5, message: 'thread 00000000-0000-4000-8000-000000000001 already has an active writer secret=private-token' },

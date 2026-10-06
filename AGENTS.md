@@ -1,6 +1,6 @@
 # CandC development guide
 
-CandC is a Windows-first, Node.js 24, local single-user application. New browser
+CandC is a cross-platform, Node.js 24, local single-user application. New browser
 discussions use version 3; version 1/2 histories remain supported. Codex and Claude
 have the live path. Gemini/Grok live execution remains locked.
 
@@ -32,6 +32,7 @@ have the live path. Gemini/Grok live execution remains locked.
 | Interface and locales | `web/App.tsx`, affected view, `web/i18n.ts`, `web/locales/en.ts` | `docs/UI_UX_SPEC.md` |
 | Performance observations | `src/performance.ts` and affected call observer | `docs/PERFORMANCE_CONTRACT.md` |
 | Verification and public export | `package.json`, affected test, `scripts/public-source.mjs` | `CONTRIBUTING.md`, `VALIDATION.md` |
+| Installation, launchers and releases | `scripts/install.mjs`, `scripts/launcher.mjs`, `scripts/package-release.mjs` | `docs/INSTALLATION.md` |
 
 ## Preserve these boundaries
 

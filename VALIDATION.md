@@ -4,6 +4,203 @@ This is a dated record of observed checks, not a development backlog. Run only
 checks relevant to the current task; see [CONTRIBUTING.md](CONTRIBUTING.md).
 Contracts belong to their owning documents listed in [AGENTS.md](AGENTS.md).
 
+## Deferred frontend view loading (2026-10-06)
+
+Scope: load `RoomView`, `DiscussionView` and `ConnectionsPage` on first use from
+`web/App.tsx`, retain the eagerly loaded creation form and mounted workspace, and
+show localized loading statuses. Add two delayed-chunk browser regressions and
+update the owning UI contract. Preserve unrelated working-tree changes.
+
+Observed checks on this working-tree snapshot:
+
+- Isolated baseline and changed builds passed. Initial JavaScript, including all
+  static entry dependencies, decreased from 571,833 to 331,796 bytes (41.98%).
+  The largest changed chunk is 271,444 bytes and no chunk-size warning appeared.
+  The warning threshold remains unchanged. All JavaScript chunks together total
+  574,766 bytes, a 0.51% increase; this is deferred loading, not a reduction in the
+  full application's code. CSS is unchanged. These sizes do not measure startup
+  latency; opening a saved discussion also loads its view and shared dependencies.
+- Backend/frontend typechecks and all three locale tests passed.
+- All 13 affected browser cases passed first, including deliberately held room,
+  legacy and connection-setting chunks, visible loading statuses, absence of
+  unused view requests, and preservation of the mounted composer/private recipient.
+- Full coverage passed 588 tests in 51 files with one worker and the unchanged
+  default timeout. Two existing POSIX process-group cases were skipped on Windows.
+  Unchanged gates passed: lines 77.95%, statements 66.76%, functions 54.33%,
+  branches 61.89%. The runner had a 240-second outer timeout and completed normally.
+- The full fake-provider browser suite passed all 82 cases in 4.4 minutes using
+  installed Chrome at the isolated fixture URL `http://127.0.0.1:4407`, under its
+  existing six-minute global timeout. Desktop/mobile light/dark workspace cases,
+  drafts, quotations, recipients, reading, Markdown, history and session recovery
+  passed. Representative desktop/mobile screenshots were inspected.
+- Diff whitespace checks passed.
+
+Commit-candidate verification excluded all unrelated installation/release changes
+by applying only these five files/sections to an isolated copy of `HEAD`.
+Backend/frontend typechecks and isolated compilation passed with the same chunk
+sizes and no chunk-size warning. All 570 tests in 50 files passed with unchanged
+coverage gates: lines 78.14%, statements 66.94%, functions 54.39%, branches 61.96%.
+All 82 browser cases passed in 4.2 minutes at the fake-only fixture on port 4408.
+The lower unit-test count reflects the excluded installer/process changes.
+Staged source/test contents matched the verified candidate after Git line-ending
+normalization; no assertions, timeouts or coverage thresholds were weakened.
+
+Verification used disposable journals/fake providers without real data,
+authentication, live calls, normal build replacement, service restart, commit or
+push. Build outputs are isolated under `.cache/verification/chunk-baseline` and
+`.cache/verification/chunk-after`; actual live-provider performance is untested.
+
+## Scoped conversation management commit verification (2026-10-06)
+
+Scope: the 29 staged conversation-management files, including M1/M2/N1 repairs.
+An isolated copy of the staged tree excluded concurrent installation/release
+changes, including their hunks in the server and validation record.
+
+Observed checks on that candidate:
+
+- Backend/frontend typechecks and isolated builds passed. The existing frontend
+  chunk-size warning remains; normal runtime outputs were preserved.
+- The complete fake-provider browser suite passed all 80 cases in 4.5 minutes
+  using installed Chrome, including both native delayed-SSE regressions for N1.
+- All 570 tests in 50 files passed with the original five-second default timeout.
+  Coverage ran in two complementary partitions: the previously timed-out revision
+  case passed independently in 2.38 seconds, and the other 569 tests passed together.
+  Both JSON reports were checked by file and collected case position to confirm
+  that every case passed, including parameterized cases with duplicate titles.
+  Native Vitest blob merging passed unchanged coverage gates: lines 78.20%,
+  statements 67.03%, functions 54.59%, branches 61.96%. No test, assertion, timeout
+  or threshold was removed or weakened. Counts differ from the broader working
+  tree because unrelated installer/process tests are outside this commit.
+- The public-source and Git-history secret scans found no leaks. Staged diff
+  whitespace checks passed.
+
+Verification used disposable journals/fake providers without real data,
+authentication, live calls, normal build replacement or service restart.
+
+## Reconnect warning during normal subscription changes (2026-10-06)
+
+Scope: repair N1 in `web/App.tsx`. Normal SSE subscription replacement no longer
+sets the connection state to failed. Opening only part of a subscription set also
+does not introduce a failure state. Transport errors still show the warning, and
+the warning clears after all subscribed streams open. Other working-tree changes
+were preserved.
+
+Observed checks on this working-tree snapshot:
+
+- Two new browser regressions use native EventSource with delayed HTTP requests
+  and animation-frame observation, covering selected-only and background-running
+  subscriptions. Both failed before the repair and passed after it: normal
+  switches show no warning frames, while real HTTP 503 responses still show the
+  reconnect warning.
+- All 14 affected history-refresh, management and session browser cases passed.
+  The complete fake-provider browser suite passed all 80 cases in 4.7 minutes,
+  using installed Chrome and isolated compilation.
+- Backend/frontend typechecks and isolated builds passed. The existing frontend
+  chunk-size warning remains; normal runtime outputs were preserved.
+- Full one-worker coverage was attempted twice. Both runs passed 587 tests and
+  skipped two existing POSIX-only cases on Windows, but failed the same existing
+  five-second backend case in `tests/room-discussion-revision.test.ts`:
+  `resets format repairs across independently resolved delivery and review episodes`.
+  That case passed when run alone with the unchanged timeout. The cause of the
+  full-coverage timeout is unconfirmed; coverage gates are not confirmed for this
+  snapshot. No timeout, assertion or threshold was changed.
+
+The owning management contract records the warning behavior. Verification used
+disposable journals/fake providers without real data, authentication, live calls,
+normal build replacement, service restart, commit or push.
+
+## Conversation management performance and refresh repair (2026-10-06)
+
+Scope: remove repeated full-directory scans during deletion diagnostics, reuse
+unchanged marker validation with bounded filesystem concurrency, and separate
+debounced history queries from selected detail/storage refresh. Retain corrupt
+marker warnings, explicit deletion validation, background SSE subscriptions and
+non-overlapping fallback polling. This repair owns `src/store.ts`, `web/App.tsx`,
+the affected management tests, `e2e/history-refresh.spec.ts` and the management
+contract. Other concurrent working-tree changes were preserved.
+
+Observed checks on this working-tree snapshot:
+
+- All 18 management tests passed. The new filesystem regression checks reuse of
+  unchanged validation, later corruption without residual content, replacement by
+  a non-regular marker, new residual backups and restart diagnostics.
+- Backend/frontend typechecks and isolated builds passed. The existing frontend
+  chunk-size warning remains; normal runtime outputs were preserved.
+- Full coverage passed 588 tests in 51 files with one worker. Two POSIX process
+  group cases were skipped by their existing Windows platform condition. Unchanged
+  gates passed: lines 77.99%, statements 66.86%, functions 54.52%, branches 61.91%.
+- All 12 affected browser cases passed using installed Chrome. Three new cases
+  control SSE and browser timers while using real fixture HTTP responses: healthy
+  idle subscriptions stop polling, debounced searches/folder changes fetch only
+  the index, disconnected transports retain polling without overlap, background
+  events do not refetch unrelated detail, selected events survive coalescing with
+  background events, and background subscriptions/polling survive the new form.
+- The complete fake-provider browser suite passed all 78 cases in 3.9 minutes,
+  including session recovery, private recipients, drafts, scroll/focus and all
+  desktop/mobile light/dark workspace cases.
+- Separate local before/after runs used disposable directories and five samples
+  per marker count. Before repair, median scans took 0.3/67.2/970.6 ms for
+  0/100/1,000 valid markers without residual content. After repair, cached medians
+  were 0.3/1.6/10.6 ms; the first scan after growing from 100 to 1,000 markers
+  took 100.9 ms.
+  These timings do not establish production throughput or server saturation.
+
+Verification used disposable journals/fake providers. No real data, authentication,
+live calls, normal build replacement, service restart, commit or push was used.
+The remaining low-priority review suggestions are outside this repair scope.
+
+## Cross-platform installation and release deployment (2026-10-06)
+
+Scope: standalone release installation, managed start/stop/status/update/doctor,
+source launchers, separated immutable versions/data/workspaces, POSIX provider
+process groups, safe release packaging and three-platform CI/draft preparation.
+The owning guide is [INSTALLATION.md](docs/INSTALLATION.md).
+
+Observed on Windows with Node.js 24.16.0:
+
+- Backend/frontend typechecks and isolated compilation passed. Normal runtime
+  outputs were preserved; the existing frontend chunk-size warning remains.
+- The full one-worker coverage run passed 582 tests in 51 files, with two POSIX
+  cases skipped on Windows. Gates were unchanged: lines 78.44%, statements
+  67.17%, functions 54.90%, branches 62.13%. After additional portable filename
+  cases, stale private-build rejection and source-export changes, all 25
+  installer/public-source tests passed.
+- The release smoke installed actual production dependencies outside the repo
+  into a Chinese/space-containing path. It loaded the compiled UI in Chromium,
+  created and completed a Demo round, stopped, reinstalled, read the saved history,
+  ran compiled doctor with all provider paths inaccessible, and stopped again.
+  This prevents accidental dependency resolution from repo development packages.
+- Nine browser regressions passed for rooms, session renewal and CLI readiness
+  prompts. They used disposable journals/fake providers. No full browser rerun
+  was required by this backend/installer change.
+- Windows source-launcher tests passed, including incompatible/unresponsive ports,
+  repeat operations and shutdown not being reported until the listener closes.
+  Installer tests cover fixed-version downloads, failed updates, retry, retained
+  history/workspaces, locks, instance identity, outside-cwd entries, and malicious
+  archive paths/links/duplicates. No test changed the user's PATH.
+- Packaging and the generated PowerShell bootstrap's help entry passed. npm audit
+  reported zero known vulnerabilities. Redacted source/Git-history secret scans
+  and public-source export passed; nothing was published.
+- After adding the one-line install commands, 28 installer/public-source tests
+  passed and one POSIX shell-input case was skipped on Windows. Generated release
+  PowerShell source piped into `iex` returned to its caller and preserved its error
+  preference. Script-block options preserved a Unicode path containing spaces;
+  a corrupted downloaded installer failed before execution. Downloads were mocked
+  and used no network, credentials or real application data. Backend typecheck passed.
+  The shell-input test is included in the macOS/Linux CI matrix.
+
+An initial dependency installation failed; switching to an installation-owned npm
+cache passed. Its original log was not retained, so the initial root cause is
+unconfirmed. Smoke failures now preserve their artifacts. Verification browsers
+and output live in workspace cache; successful temporary installations were removed.
+
+macOS/Linux native execution, their POSIX cleanup cases, the remote bootstrap
+download, real provider login/inference, and the GitHub workflow have not run on
+this host. They require native CI/manual evidence. The checkout has no public
+repository URL; OWNER/REPO remains a placeholder until a release is published.
+No real data, provider authentication, existing service restart, normal build
+replacement, commit, push or publication was performed.
+
 ## Manual conversation management (2026-10-06)
 
 Scope: manual Active/Archived/Trash folders for versions 1/2/3, read-only archived

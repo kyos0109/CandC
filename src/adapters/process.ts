@@ -59,6 +59,7 @@ export class JsonLineProcess implements JsonConnection {
     spec.signal.throwIfAborted();
     this.child = spawn(spec.executable, spec.args, {
       cwd: spec.cwd, stdio: 'pipe', shell: false, windowsHide: true, env: spec.env ?? process.env,
+      detached: process.platform !== 'win32',
     });
     this.child.once('spawn', () => observe(spec.observePerformance, spec.startedPhase ?? 'inferenceStarted'));
     this.exited = new Promise((resolve) => this.child.once('close', (code) => {
@@ -94,13 +95,28 @@ export class JsonLineProcess implements JsonConnection {
 
   private terminate(): Promise<void> {
     if (this.terminating) return this.terminating;
-    if (this.ended || this.child.exitCode !== null || !this.child.pid) return Promise.resolve();
+    if (!this.child.pid || (process.platform === 'win32' && (this.ended || this.child.exitCode !== null))) return Promise.resolve();
     const pid = this.child.pid;
     this.terminating = process.platform === 'win32' ? new Promise<void>((resolve) => {
       // This PID belongs to our still-live ChildProcess. Kill its tree before the parent exits.
       execFile('taskkill.exe', ['/PID', String(pid), '/T', '/F'], { windowsHide: true, timeout: 4_000 }, () => { if (!this.ended) this.child.kill(); resolve(); });
-    }) : Promise.resolve().then(() => { this.child.kill(); });
+    }) : this.terminateGroup(pid);
     return this.terminating;
+  }
+
+  private async terminateGroup(pid: number): Promise<void> {
+    const signal = (value: NodeJS.Signals | 0): boolean => {
+      try { process.kill(-pid, value); return true; }
+      catch (error) { if ((error as NodeJS.ErrnoException).code === 'ESRCH') return false; throw error; }
+    };
+    if (!signal('SIGTERM')) return;
+    const deadline = Date.now() + 1_500;
+    while (Date.now() < deadline) {
+      if (!signal(0)) return;
+      await new Promise(resolve => setTimeout(resolve, 25));
+    }
+    // Descendants can retain stdio after their parent exits. Address our group, never the app's group.
+    signal('SIGKILL');
   }
 
   private receive(chunk: string): void {
@@ -167,7 +183,9 @@ export class JsonLineProcess implements JsonConnection {
     let timer: NodeJS.Timeout | undefined;
     await Promise.race([this.exited, new Promise<void>((_, reject) => {
       timer = setTimeout(() => {
-        this.child.kill('SIGKILL');
+        if (process.platform !== 'win32' && this.child.pid) {
+          try { process.kill(-this.child.pid, 'SIGKILL'); } catch { /* The owned group may already have exited. */ }
+        } else this.child.kill('SIGKILL');
         reject(new AppError('PROCESS_STUCK', 'Owned agent process did not exit; session cannot be reused.'));
       }, 5_000);
     })]).finally(() => { if (timer) clearTimeout(timer); });

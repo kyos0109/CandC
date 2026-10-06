@@ -8,7 +8,7 @@
 > [implementation comparison](docs/IMPLEMENTATION_STATUS.md) for changes from `30c2511`
 > and the limits of deterministic and live-model validation.
 
-CandC is a Windows-first app for discussing a question with **2–4 AI speaker seats**
+CandC is a local app for Windows, macOS and Linux for discussing a question with **2–4 AI speaker seats**
 and an optional independent moderator. Set a topic, compare arguments, add your own
 constraints and review the resulting answer in a browser. Codex and Claude run through
 owned background CLI processes; each seat has its own session and workspace, including
@@ -20,9 +20,9 @@ seats using the same provider. Existing desktop chats are not reused.
 not imply simultaneous speaker generation. Peer review records agreement on the answer,
 not independent verification of its facts.*
 
-**Windows · Node.js 24 · Local single-user app · Codex + Claude live · MIT handwritten code**
+**Windows / macOS / Linux · Node.js 24 · Local single-user app · Codex + Claude live · MIT handwritten code**
 
-[Quick start](#quick-start-on-windows) · [How it works](#how-a-discussion-works) ·
+[Install without Git](docs/INSTALLATION.md) · [Source quick start](#quick-start-on-windows) · [How it works](#how-a-discussion-works) ·
 [User guide](docs/USER_GUIDE.md) · [Development](CONTRIBUTING.md) · [Security](SECURITY.md)
 
 ## What can you do with it?
@@ -42,6 +42,35 @@ For example, discuss: “Which approach should we use for a small internal servi
 Supply the expected workload, operating environment and maintenance constraints, then
 assign implementation and reliability perspectives to different seats. This is a
 suggested use case, not a measured claim about model quality.
+
+## Install without cloning
+
+Install **Node.js 24 and npm** first. No Git or development tools are required.
+
+macOS/Linux:
+
+```sh
+curl -fsSL https://github.com/OWNER/REPO/releases/latest/download/install.sh | sh
+```
+
+Windows PowerShell:
+
+```powershell
+irm https://github.com/OWNER/REPO/releases/latest/download/install.ps1 | iex
+```
+
+Replace `OWNER/REPO` with the public release repository once published.
+
+Release installation downloads compiled files, installs locked runtime dependencies,
+and starts the app.
+PATH is not changed; the installer supplies fixed start/stop entries and exact
+commands for `status`, `update` and `doctor`. Updates require a stopped server and
+preserve history and agent workspaces. See [installation and deployment](docs/INSTALLATION.md)
+for shell/PowerShell commands, custom paths, headless use and failure recovery.
+
+No public repository/download URL is configured in this checkout yet. The documented
+`OWNER/REPO` commands are templates until a Release is published. Native verification
+limits are recorded in [Validation](VALIDATION.md).
 
 ## Quick start on Windows
 
@@ -74,6 +103,9 @@ For a terminal launch:
 npm ci --ignore-scripts
 npm run dev
 ```
+
+macOS/Linux source users can use `sh scripts/start.sh` and `sh scripts/stop.sh`.
+These source launchers build the app; installed release launchers reuse compiled files.
 
 `dev` and the launcher replace normal build outputs. For development verification
 that preserves those outputs, use `npm run build:isolated`.
@@ -195,5 +227,5 @@ Apache-2.0 terms; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 `npm run export:public` creates a scanned source-only directory and hashed manifest
 under `.cache/`, including these docs and the SVG overview. It excludes private data,
 credentials, dependencies, build outputs and Git history. It does not publish or rewrite
-this repository. Review the export before creating a public repository. Windows CI uses
-fake providers.
+this repository. Review the export before creating a public repository. Cross-platform
+CI uses fake providers; secret scans and public export remain Windows release gates.

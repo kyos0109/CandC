@@ -21,7 +21,7 @@ const inRoot = (root: string, target: string): boolean => {
 export async function validateRoots(roots: string[]): Promise<string[]> {
   const result: string[] = [];
   for (const root of roots) {
-    if (!path.isAbsolute(root) || root.startsWith('\\\\') || root.startsWith('//') || /:\\?$/.test(root)) throw new AppError('INVALID_ROOT', 'Select a specific absolute local directory, not a drive or network root.', 400);
+    if (!path.isAbsolute(root) || path.resolve(root) === path.parse(path.resolve(root)).root || root.startsWith('\\\\') || root.startsWith('//') || /:\\?$/.test(root)) throw new AppError('INVALID_ROOT', 'Select a specific absolute local directory, not a drive or network root.', 400);
     if (process.platform === 'win32') {
       const drive = root.match(/^([a-zA-Z]):[\\/]/)?.[1];
       if (!drive) throw new AppError('INVALID_ROOT', 'Only local drive directories are supported.', 400);
@@ -29,6 +29,7 @@ export async function validateRoots(roots: string[]): Promise<string[]> {
       if (!['Fixed', 'Removable', 'Ram'].includes(stdout.trim())) throw new AppError('INVALID_ROOT', 'Network drives cannot be selected.', 400);
     }
     const resolved = await realpath(root);
+    if (resolved === path.parse(resolved).root) throw new AppError('INVALID_ROOT', 'Filesystem roots cannot be selected.', 400);
     if (resolved.startsWith('\\\\') || resolved.startsWith('//')) throw new AppError('INVALID_ROOT', 'Network links cannot be selected.', 400);
     if (!(await lstat(resolved)).isDirectory()) throw new AppError('INVALID_ROOT', 'The selected path is not a directory.', 400);
     if (resolved.split(/[\\/]/).some((segment) => blockedNames.test(segment))) throw new AppError('INVALID_ROOT', 'Credential and application-state directories cannot be selected.', 400);

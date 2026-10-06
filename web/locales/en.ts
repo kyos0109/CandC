@@ -144,6 +144,7 @@ export const english: Readonly<Record<string, string>> = {
   "本機工作空間": "Local workspace",
   "連線": "Connections",
   "正在載入討論室…": "Loading the discussion room…",
+  "正在載入連線與設定…": "Loading connections and settings…",
   "閱讀設定": "Reading settings",
   "返回討論": "Back to discussion",
   "僅本機 · 127.0.0.1 · 對話保存在這台電腦。": "Local only · 127.0.0.1 · Conversations are stored on this computer.",

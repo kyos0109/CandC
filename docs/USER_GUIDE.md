@@ -119,7 +119,9 @@ See the [implementation-status table](IMPLEMENTATION_STATUS.md) before relying o
 - **Rebuild sessions / 重建工作階段** reconstructs from confirmed eligible history.
   Recovery and rebuilding never automatically replay an unknown-result turn.
 
-`Stop-CandC.cmd` stops the backend and cancels its owned turns while preserving history.
+The installed Stop-CandC entry (`.cmd`, `.command` or `.sh`) stops the backend and
+cancels its owned turns while preserving history. See [installation](INSTALLATION.md)
+for cross-platform commands and stopped-only updates.
 It is separate from stopping one room in the interface. Preserve a matching journal/build
 pair for rollback; older strict-schema binaries may reject newer optional fields.
 

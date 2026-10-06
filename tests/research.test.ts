@@ -59,7 +59,8 @@ describe('read-only research boundaries', () => {
     await expect(validateRoots([path.join(directory, name)])).rejects.toMatchObject({ code: 'INVALID_ROOT' });
   });
   it('rejects binary and oversized files', async () => { await expect(research.read(0,'binary.dat')).rejects.toMatchObject({code:'BINARY_FILE'}); await expect(research.read(0,'large.txt')).rejects.toMatchObject({code:'FILE_LIMIT'}); });
-  it('rejects junctions escaping the selected root', async () => { await symlink(path.resolve('src'),path.join(directory,'escape'),'junction'); await expect(research.read(0,'escape/domain.ts')).rejects.toMatchObject({code:'PATH_DENIED'}); });
+  it('rejects directory links escaping the selected root', async () => { await symlink(path.resolve('src'),path.join(directory,'escape'),process.platform === 'win32' ? 'junction' : 'dir'); await expect(research.read(0,'escape/domain.ts')).rejects.toMatchObject({code:'PATH_DENIED'}); });
+  it('rejects the filesystem root', async () => { await expect(validateRoots([path.parse(directory).root])).rejects.toMatchObject({ code: 'INVALID_ROOT' }); });
   it.each(['127.0.0.1','10.1.2.3','172.16.0.1','192.168.2.3','169.254.169.254','::1','::ffff:127.0.0.1','fc00::1'])('rejects private address %s', address => { expect(isPublicAddress(address)).toBe(false); });
   it('rejects private fetch URLs before opening a connection', async () => { await expect(fetchPublicPage('https://127.0.0.1')).rejects.toMatchObject({code:'URL_DENIED'}); await expect(fetchPublicPage('http://example.com')).rejects.toMatchObject({code:'URL_DENIED'}); });
   it('serves only the four bounded research tools over real MCP stdio', async () => {

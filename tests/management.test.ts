@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import * as fs from 'node:fs/promises';
 import { DiscussionService } from '../src/discussion-service.js';
 import { DiscussionController } from '../src/controller.js';
 import { RoomController } from '../src/room-controller.js';
@@ -12,6 +13,11 @@ import { roomStateSchema } from '../src/room-contract.js';
 import { indexQuerySchema } from '../src/management.js';
 import { createServer } from '../src/server.js';
 import { input } from './helpers.js';
+
+vi.mock('node:fs/promises', async importOriginal => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>();
+  return { ...actual, readFile: vi.fn(actual.readFile) };
+});
 
 async function setup(fault?: StorageFault) {
   const directory = await mkdtemp(path.resolve('.cache/management-test-'));
@@ -27,6 +33,29 @@ async function manage(ctx: Awaited<ReturnType<typeof setup>>, id: string, action
 }
 
 describe('conversation management', () => {
+  it('reuses unchanged marker validation and still detects corruption, replacement and new residual files', async () => {
+    const ctx = await setup(), store = new DiscussionStore(ctx.directory);
+    const ids = Array.from({ length: 80 }, () => randomUUID());
+    const marker = (id: string, expectedSequence = 1) => JSON.stringify({ version: 1, id, operationId: randomUUID(), expectedSequence, deletedAt: new Date().toISOString() });
+    const reads = vi.mocked(fs.readFile); reads.mockClear();
+    try {
+      for (const id of ids) await writeFile(path.join(ctx.directory, `${id}.deleted.json`), marker(id));
+      expect(await store.deletionIssues()).toEqual([]); expect(reads).toHaveBeenCalledTimes(80);
+      reads.mockClear(); expect(await store.deletionIssues()).toEqual([]); expect(reads).not.toHaveBeenCalled();
+      const id = ids[0]!, file = path.join(ctx.directory, `${id}.deleted.json`);
+      await writeFile(file, '');
+      expect(await store.deletionIssues()).toEqual([{ id, reason: 'Deletion marker is unconfirmed. Preserve the files for inspection.' }]);
+      expect(reads).toHaveBeenCalledTimes(1);
+      await writeFile(file, marker(id, 7));
+      await writeFile(path.join(ctx.directory, `${id}.jsonl.backup-123.gz`), 'Residual content');
+      expect(await store.deletionIssues()).toEqual([{ id, reason: 'Deletion is incomplete. Retry permanent deletion.', expectedSequence: 7 }]);
+      await fs.unlink(file); await fs.mkdir(file);
+      expect(await store.deletionIssues()).toEqual([{ id, reason: 'Deletion marker is unconfirmed. Preserve the files for inspection.' }]);
+      expect((await new DiscussionStore(ctx.directory).deletionIssues())[0]).not.toHaveProperty('expectedSequence');
+      expect(store.isDeleted(id)).toBe(true);
+    } finally { reads.mockClear(); await ctx.cleanup(); }
+  });
+
   for (const version of [1, 2, 3] as const) it(`preserves version ${version} content, persists folders, enforces read-only and restores its previous folder`, async () => {
     const ctx = await setup();
     try {

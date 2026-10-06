@@ -1,7 +1,7 @@
 # Contributing
 
 Read [AGENTS.md](AGENTS.md) for task scope, code ownership and protected boundaries.
-Use Windows and Node.js 24. Begin with a reproducible issue and the smallest coherent
+Use Windows, macOS or Linux and Node.js 24. Begin with a reproducible issue and the smallest coherent
 change. Read only the affected source, tests and owning contract; completed reviews
 and historical validation do not authorize additional implementation.
 
@@ -23,7 +23,7 @@ npm run test:e2e
 ```
 
 `build:isolated` writes only to `.cache/verification`; `CANDC_VERIFY_DIR` can select
-another child of `.cache/`. `build`, `check`, `dev` and the launcher replace the normal
+another child of `.cache/`. `build`, `check`, `dev` and the source launcher replace the normal
 runtime outputs and require authorization when preserving a running build.
 
 Browser tests use a new fake-only fixture and disposable journals, refusing server

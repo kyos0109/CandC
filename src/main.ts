@@ -1,5 +1,6 @@
 import { PerformanceStore } from './performance.js';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { FakeAdapter } from './adapters/fake.js';
 import { DiscussionController } from './controller.js';
 import { DiscussionService } from './discussion-service.js';
@@ -53,7 +54,8 @@ const rooms = new RoomController(new DiscussionStore(root, undefined, roomStateS
 }, requireRoomReady, performance);
 const controller = new DiscussionService(legacy, rooms);
 await controller.initialize();
-const server = createServer(controller, { webRoot: path.resolve('web-dist') });
+const server = createServer(controller, { webRoot: fileURLToPath(new URL('../web-dist/', import.meta.url)),
+  ...(process.env.CANDC_INSTANCE_ID ? { instanceId: process.env.CANDC_INSTANCE_ID } : {}) });
 const port = Number(process.env.CANDC_PORT ?? 4317);
 if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('CANDC_PORT must be a valid local port.');
 const address = await server.listen({ host: '127.0.0.1', port });
