@@ -47,6 +47,12 @@ const referenceSchema = z.object({ messageId: z.uuid(), disposition: z.enum(['ad
 const sessionSchema = z.object({ id: z.string().min(1), model: z.string(), backend: z.enum(['fake', 'live']), generation: z.uuid(),
   delivered: z.array(z.uuid()), configurationVersion: z.number().int().nonnegative() }).strict();
 const metadataDiagnosticSchema = z.enum(['work-schema', 'work-reference', 'work-limit', 'references-schema', 'references', 'delivery-schema', 'review-schema', 'proposal-reference', 'unsupported-action', 'control-schema', 'delivery-repair-limit']);
+export const providerFailureSchema = z.object({ provider: z.literal('codex'),
+  method: z.enum(['initialize', 'config/read', 'thread/start', 'thread/resume', 'turn/start', 'other']),
+  rpcCode: z.number().int().safe().optional(), reason: z.enum(['active-writer', 'thread-not-found', 'rejected']),
+  turnRequestSent: z.literal(false).optional(),
+}).strict();
+export type ProviderFailure = z.infer<typeof providerFailureSchema>;
 const callSchema = z.object({ id: z.uuid(), participant: participantSchema, provider: providerSchema, generation: z.uuid(),
   sessionId: z.string().nullable(), nativeSessionId: z.string().nullable(), taskVersion: z.number().int().positive(),
   grantId: z.uuid().nullable(), purpose: z.enum(['discussion', 'moderation', 'monitor', 'summary']),
@@ -58,6 +64,7 @@ const callSchema = z.object({ id: z.uuid(), participant: participantSchema, prov
   usage: z.record(z.string(), z.number().nonnegative()).nullable(), reservationMs: z.number().nonnegative(),
   references: z.array(referenceSchema).max(100).default([]),
   researchPerformed: z.boolean().optional(),
+  providerFailure: providerFailureSchema.optional(),
   controlDiagnostic: z.enum(['envelope', 'json', 'schema', 'task-version', 'grant', 'references', 'workflow-reference', 'workflow-limit']).optional(),
   metadataDiagnostics: z.array(metadataDiagnosticSchema).max(11).optional(),
 }).strict();

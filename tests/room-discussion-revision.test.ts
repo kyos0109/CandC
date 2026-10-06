@@ -43,6 +43,44 @@ async function setup(respond = fakeRoomResponse, patch: Partial<RoomInput> = {})
 const moderator = { id: 'moderator', provider: 'codex', role: 'moderator', settings: { model: 'fixture', effort: 'low' } } as const;
 
 describe('neutral discussion, reviewed stages and optional metadata', () => {
+  it.each(['free', 'alternating'] as const)('pauses a reviewed proposal without repeatedly calling done speakers in %s flow', async flow => {
+    let reviewed = false;
+    const ctx = await setup(r => {
+      if (r.room!.actor === 'moderator') return response(r, { type: 'observe' }, {}, 'done');
+      if (!r.room!.proposal) return response(r, proposal(), {}, 'done');
+      if (r.room!.actor === 'claude' && !reviewed) {
+        reviewed = true;
+        return response(r, { type: 'confirm', proposalId: r.room!.proposal.id,
+          review: { adequate: true, reason: 'The conditional answer is acceptable, but requested evidence remains missing.', gaps: ['Verify the requested evidence.'] } }, {}, 'done');
+      }
+      return response(r, { type: 'none' }, {}, 'done');
+    }, { mode: 'conclusion', flow, moderator, limits: { maxRounds: 8, maxDurationMs: 30_000, turnTimeoutMs: 5_000, maxModeratorCalls: 30 } });
+    const s = await ctx.run();
+    expect(ctx.requests.filter(r => r.room!.actor !== 'moderator').map(r => r.room!.actor)).toEqual(['codex', 'claude', 'codex', 'claude']);
+    expect(s.status).toBe('paused'); expect(s.pauseReason).toContain('提案尚未通過審查');
+    expect(s.room.proposal?.reviews?.[0]?.gaps).toEqual(['Verify the requested evidence.']);
+    expect(s.room.proposal?.confirmed).toEqual(['codex']); expect(s.room.outcome).toBeNull();
+    expect(s.room.interimResults ?? []).toEqual([]); expect(ctx.storageErrors).toEqual([]);
+  });
+  it('runs a queued task despite done speakers and pauses only after that task and the peer response finish', async () => {
+    const ctx = await setup(r => {
+      if (!r.room!.proposal) return response(r, proposal(), {}, 'done');
+      if (r.room!.actor === 'claude' && !r.room!.proposal.reviews?.length) return response(r,
+        { type: 'confirm', proposalId: r.room!.proposal.id, review: { adequate: false, reason: 'Evidence is missing.', gaps: ['Obtain evidence.'] } }, {}, 'done');
+      if (r.room!.conclusionRequest?.kind === 'review') return response(r, { type: 'none' }, { work: {
+        tasks: [{ key: 'follow-up', kind: 'analysis', target: 'codex', task: 'Examine the retained limitation.', sources: [r.messageId] }],
+      } }, 'done');
+      if (r.room!.execution?.currentTaskKey === 'follow-up') return response(r, { type: 'none' }, { work: {
+        completedTasks: [{ key: 'follow-up', sources: [r.messageId] }],
+      } }, 'done');
+      return response(r, { type: 'none' }, {}, 'done');
+    }, { mode: 'conclusion', limits: { maxRounds: 8, maxDurationMs: 30_000, turnTimeoutMs: 5_000, maxModeratorCalls: 30 } });
+    const s = await ctx.run();
+    expect(ctx.requests.map(r => r.room!.actor)).toEqual(['codex', 'claude', 'codex', 'codex', 'claude']);
+    expect(s.room.workflow?.tasks).toMatchObject([{ key: 'follow-up', status: 'completed' }]);
+    expect(s.status).toBe('paused'); expect(s.pauseReason).toContain('提案尚未通過審查'); expect(s.room.outcome).toBeNull();
+    expect(s.room.proposal?.confirmed).toEqual(['codex']); expect(ctx.storageErrors).toEqual([]);
+  });
   it.each(['auto', 'conclusion'] as const)('%s hands substantive review back to peers after a rebuttal or neutral fallback', async mode => {
     for (const shape of ['none', 'downgraded'] as const) {
       let rejected = false;

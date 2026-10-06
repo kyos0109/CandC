@@ -23,6 +23,10 @@ handoffs are retained in Git history, not active development instructions.
   shows its length. The header band and avatar stay pinned while it is read, and focus
   entering folded text unfolds it. Folding is presentation only: saved text, copy and
   exports stay complete.
+- A strip above the stream shows whose turn it is, in that seat's colour, with a speaking
+  indicator while it replies. It shows only what the moderator asked, on one line with an
+  in-place "full instruction" expansion. The scheduler's own task sentences (default
+  prompt, invitation wrapper) are never shown; a default becomes one localized line.
 - Version 3 has Conversation, Conclusion and Diagnostics tabs. Participant panels
   dock on wide screens and use a drawer on narrow screens. Legacy views preserve
   their supported issue/history controls. Do not recreate the removed two-agent form.

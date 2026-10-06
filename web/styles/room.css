@@ -13,8 +13,27 @@
 .room-tab small.hl{background:var(--accent-soft);color:var(--accent)}
 .room-meter{display:flex;align-items:center;gap:10px;margin-left:auto;color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap}
 .room-meter .moderator-count{padding:1px 8px;border-radius:7px;background:var(--moderator-soft);color:var(--moderator);font-weight:600}
-.stage-grant{display:flex;flex:none;align-items:center;gap:8px;margin:6px 24px 0;color:var(--muted);font-size:12.5px}
-.stage-grant b{color:var(--text);font-weight:600}
+/* The strip above the stream: who has the floor and what they were asked. Colours come from the target seat (see bubbles.css). */
+.stage-grant{flex:none;margin:8px 24px 0;border:1px solid var(--seat-line,var(--line));border-left:4px solid var(--seat,var(--line-strong));border-radius:12px;background:color-mix(in srgb,var(--seat,var(--other)) 9%,var(--surface));animation:grant-in var(--dur-3) var(--ease-out)}
+.relay-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;min-height:46px;padding:6px 10px 6px 12px}
+.relay-flow{display:flex;flex:none;align-items:center;gap:6px}
+.relay-flow i{display:block;width:26px;height:2px;border-radius:2px;background:linear-gradient(90deg,var(--moderator),var(--seat,var(--other)));transform-origin:left;animation:relay-draw var(--dur-3) var(--ease-out)}
+.relay-who{flex:none;color:var(--muted);font-size:12.5px;white-space:nowrap}
+.relay-who b{color:var(--seat-ink,var(--text));font-weight:650}
+.relay-task{flex:1 1 220px;min-width:0;overflow:hidden;color:var(--text);font-size:13.5px;text-overflow:ellipsis;white-space:nowrap}
+.relay-task.quiet{color:var(--muted);overflow:visible;text-overflow:clip;white-space:normal}
+.relay-task.open{order:5;flex-basis:100%;padding:8px 0 4px 2px;overflow:visible;border-top:1px dashed color-mix(in srgb,var(--seat,var(--other)) 35%,var(--line));line-height:1.7;overflow-wrap:anywhere;text-overflow:clip;white-space:pre-wrap;animation:fade-in var(--dur-2) ease-out}
+.relay-tag{flex:none;padding:1px 8px;border-radius:7px;background:var(--hover);color:var(--muted);font-size:11px}
+.relay-toggle{display:inline-flex;flex:none;align-items:center;gap:4px;min-height:30px;margin-left:auto;padding:0 10px;border:0;border-radius:8px;background:transparent;color:var(--accent);font-size:12.5px;font-weight:600}
+.relay-toggle::after{content:"▾";font-size:11px}
+.relay-toggle.open::after{content:"▴"}
+.relay-toggle:hover{background:var(--hover)}
+.relay-who .dots{display:inline-flex;gap:3px;margin-left:8px;vertical-align:middle}
+.dots i{width:4px;height:4px;border-radius:50%;background:var(--seat,var(--accent));animation:breathe 1.2s ease-in-out infinite}
+.dots i:nth-child(2){animation-delay:.2s}
+.dots i:nth-child(3){animation-delay:.4s}
+@keyframes grant-in{from{opacity:0;transform:translateY(-4px)}}
+@keyframes relay-draw{from{transform:scaleX(0)}}
 .room-event{display:flex;align-items:center;justify-content:center;gap:8px;max-width:860px;margin:0 auto 18px;color:var(--muted);font-size:12px}
 .room-event>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .room-event b{color:var(--text);font-weight:600}

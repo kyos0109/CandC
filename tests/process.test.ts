@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { JsonLineProcess, RpcConnection, type JsonConnection } from '../src/adapters/process.js';
+import { JsonLineProcess, RpcConnection, RpcRejectionError, type JsonConnection } from '../src/adapters/process.js';
 
 const fixture = path.resolve('tests/fixtures/process.mjs');
 const connection = (scenario: string, signal = new AbortController().signal) => new JsonLineProcess({
@@ -9,6 +9,21 @@ const connection = (scenario: string, signal = new AbortController().signal) => 
 });
 
 describe('owned local fixture processes', () => {
+  it.each([
+    { code: 'private-code', message: 'private provider prompt', data: { token: 'private-token' } },
+    { code: 1.5, message: 'thread 00000000-0000-4000-8000-000000000001 already has an active writer secret=private-token' },
+    { code: Number.MAX_SAFE_INTEGER + 1, message: 'private provider prompt' },
+    'private-provider-text',
+  ])('does not persist unrecognized RPC error contents: %#', async error => {
+    const transport: JsonConnection = { send() {}, endInput() {}, async finish() {}, async close() {},
+      async next() { return { id: 1, error }; } };
+    const rejected = await new RpcConnection(transport).request('private-method', {}).catch(error => error);
+    expect(rejected).toBeInstanceOf(RpcRejectionError);
+    if (!(rejected instanceof RpcRejectionError)) throw new Error('Expected an RPC rejection.');
+    expect(rejected.diagnostic).toEqual({ provider: 'codex', method: 'other', reason: 'rejected' });
+    expect(rejected.message).toBe('App-server rejected other.');
+    expect(JSON.stringify(rejected)).not.toContain('private');
+  });
   it('bounds queued bytes independently of the record count and settles the owned process', async () => {
     const process = connection('flood');
     try {

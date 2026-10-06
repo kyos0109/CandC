@@ -1,6 +1,7 @@
 import { translate, dateLocale } from './i18n.js';
-import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { plainSnippet } from './snippet.js';
+import { speakingTask } from './speakingTask.js';
 import type { RoomDiscussion, RoomMessage } from '../src/room-contract.js';
 import { MessageContent } from './MessageContent.js';
 import { Icon } from './Icon.js';
@@ -21,6 +22,33 @@ export function seatLive(state: RoomDiscussion, id: string, speaking: string | n
 export function SeatStrip({ state, seats, speaking }: { state: RoomDiscussion; seats: Seats; speaking: string | null }) {
   // Only the mute badge shows in the header; confirmation checks live in the roster and the consensus strip, where they have room.
   return <span className="seat-strip" aria-hidden="true">{state.participants.map(p => { const live = seatLive(state, p.id, speaking); return <SeatAvatar key={p.id} seat={seatOf(seats, p.id)} size="sm" state={live.state} badge={live.badge === 'mute' ? 'mute' : undefined}/>; })}{state.moderator && <SeatAvatar seat={seatOf(seats, 'moderator')} size="sm"/>}</span>;
+}
+
+const MARK = String.fromCharCode(1);
+const named = (text: string, name: string) => { const [before = '', after = ''] = text.split(MARK); return <>{before}<b>{name}</b>{after}</>; };
+
+/** Who has the floor and what they were asked. Only the moderator's own words are shown; the scheduler's default sentences become one localized line. */
+export function StageGrant({ grant, state, seats, live }: { grant: NonNullable<RoomDiscussion['room']['grant']>; state: RoomDiscussion; seats: Seats; live: boolean }) {
+  const target = seatOf(seats, grant.target), task = speakingTask(grant.task), id = useId();
+  const asked = !!state.moderator && (task.asked || state.moderatorMode === 'judge' && task.kind === 'text');
+  const line = task.kind === 'free' ? translate("依原題發表看法，並回應其他人的公開論點") : task.kind === 'check' ? translate("核對一則公開論點：說明同意、不同意或修正，並引用該則訊息") : task.text;
+  const box = useRef<HTMLSpanElement>(null), [open, setOpen] = useState(false), [clipped, setClipped] = useState(false);
+  useLayoutEffect(() => {
+    const el = box.current; if (!el) return;
+    const measure = () => setClipped(el.scrollWidth > el.clientWidth); measure();
+    const observer = new ResizeObserver(measure); observer.observe(el); return () => observer.disconnect();
+  }, [line]);
+  const expandable = task.kind === 'text' && (clipped || !!task.more || task.text.includes('\n'));
+  return <div className={'stage-grant ' + seatSkin(target, false)}>
+    <div className="relay-row">
+      <span className="relay-flow" aria-hidden="true">{asked && <><SeatAvatar seat={seatOf(seats, 'moderator')} size="sm"/><i/></>}<SeatAvatar seat={target} size="sm" state={live ? 'speaking' : undefined}/></span>
+      <span className="relay-who">{named(asked ? translate("主持人請 {0} 發言", MARK) : translate("輪到 {0} 發言", MARK), target.name)}{live && <span className="dots" aria-hidden="true"><i/><i/><i/></span>}</span>
+      <span ref={box} id={id} className={'relay-task' + (open ? ' open' : '') + (task.kind === 'text' ? '' : ' quiet')}>{open && task.more ? `${task.text}\n\n${task.more}` : line}</span>
+      {task.kind === 'free' && <span className="relay-tag">{translate("自動輪替")}</span>}
+      {task.kind === 'check' && <span className="relay-tag">{translate("系統安排")}</span>}
+      {(expandable || open) && <button type="button" className={'relay-toggle' + (open ? ' open' : '')} aria-expanded={open} aria-controls={id} onClick={() => setOpen(!open)}>{open ? translate("收合") : translate("完整指示")}</button>}
+    </div>
+  </div>;
 }
 
 /** Native radios, one per seat. The caption says who can read the message before it is sent. */

@@ -1,13 +1,13 @@
 /* Speaker bubbles. Every seat has its own rail, header band and tint, so consecutive replies never read as one block.
    Colour only reinforces identity: names, glyphs and the outline on later seats of one provider still carry it. */
-.message.seated{--seat:var(--other)}
-.message.prov-codex{--seat:var(--codex)}
-.message.prov-claude{--seat:var(--claude)}
-.message.prov-gemini{--seat:var(--gemini)}
-.message.prov-grok{--seat:var(--grok)}
-.message.speaker-moderator{--seat:var(--moderator)}
-.message.seat-alt{--seat:var(--alt-seat)}
-.message.seated{--seat-line:color-mix(in srgb,var(--seat) 46%,var(--bubble-line));--band:color-mix(in srgb,var(--seat) 24%,var(--bubble));--tint:color-mix(in srgb,var(--seat) 15%,var(--bubble));--seat-ink:color-mix(in srgb,var(--seat) 62%,var(--text));--meta-ink:color-mix(in srgb,var(--text) 82%,var(--seat))}
+:is(.message,.stage-grant).seated{--seat:var(--other)}
+:is(.message,.stage-grant).prov-codex{--seat:var(--codex)}
+:is(.message,.stage-grant).prov-claude{--seat:var(--claude)}
+:is(.message,.stage-grant).prov-gemini{--seat:var(--gemini)}
+:is(.message,.stage-grant).prov-grok{--seat:var(--grok)}
+:is(.message,.stage-grant).speaker-moderator{--seat:var(--moderator)}
+:is(.message,.stage-grant).seat-alt{--seat:var(--alt-seat)}
+:is(.message,.stage-grant).seated{--seat-line:color-mix(in srgb,var(--seat) 46%,var(--bubble-line));--band:color-mix(in srgb,var(--seat) 24%,var(--bubble));--tint:color-mix(in srgb,var(--seat) 15%,var(--bubble));--seat-ink:color-mix(in srgb,var(--seat) 62%,var(--text));--meta-ink:color-mix(in srgb,var(--text) 82%,var(--seat))}
 .message.seated .message-main{width:fit-content;max-width:100%;align-items:stretch}
 .message.speaker-moderator .message-main{max-width:min(100%,560px)}
 .message.seated .message-meta{position:sticky;top:calc(var(--pad-top,0px) * -1);z-index:3;margin:0;padding:6px 14px;border:1px solid var(--seat-line);border-left:4px solid var(--seat);border-bottom:0;border-radius:4px 14px 0 0;background:var(--band);color:var(--meta-ink)}

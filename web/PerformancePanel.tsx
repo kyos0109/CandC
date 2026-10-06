@@ -1,7 +1,7 @@
 import { translate } from './i18n.js';
 import { useEffect, useState } from 'react';
-import type { PerformanceView } from '../src/performance';
-import { api } from './api';
+import type { PerformanceView } from '../src/performance.js';
+import { api } from './api.js';
 
 const names: Record<string, string> = {
   get lock() { return translate("取得執行鎖"); }, get login() { return translate("登入與版本檢查"); }, get catalog() { return translate("模型清單檢查"); }, get selection() { return translate("輸入選取"); }, get prepared() { return translate("準備快照保存"); },

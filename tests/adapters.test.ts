@@ -127,6 +127,37 @@ describe('Claude stream handling', () => {
 });
 
 describe('Codex RPC handling', () => {
+  it.each(['thread/start', 'thread/resume'] as const)('records a rejected %s without sending a turn or exposing provider text', async method => {
+    const sessionId = '00000000-0000-4000-8000-000000000001';
+    const connection = new ScriptedConnection([
+      { id: 1, result: {} }, policyResponse,
+      { id: 3, error: { code: -32600, message: `thread ${sessionId} already has an active writer`, data: { secret: 'private-provider-data' } } },
+    ]);
+    const req = request(method === 'thread/resume' ? { session: { id: sessionId, model: 'fixture-model', backend: 'live' } } : {});
+    const error = await collect(new CodexAdapter('fixture', '.', consent, () => connection, async () => []).run(req)).catch(error => error);
+    expect(error).toMatchObject({ code: 'RPC_ERROR', diagnostic: { provider: 'codex', method, rpcCode: -32600, reason: 'active-writer', turnRequestSent: false } });
+    expect(connection.sent).not.toEqual(expect.arrayContaining([expect.objectContaining({ method: 'turn/start' })]));
+    expect(connection.closed).toBe(true);
+    expect(JSON.stringify(error)).not.toContain('private-provider-data');
+    expect(error.message).not.toContain(sessionId);
+  });
+  it('keeps turn/start rejection distinct from failure before submission', async () => {
+    const connection = new ScriptedConnection([...codexMessages().slice(0, 3), { id: 4, error: { code: -32602, message: 'private prompt and Bearer private-token' } }]);
+    const error = await collect(new CodexAdapter('fixture', '.', consent, () => connection, async () => []).run(request())).catch(error => error);
+    expect(error).toMatchObject({ diagnostic: { method: 'turn/start', rpcCode: -32602, reason: 'rejected' } });
+    expect(error.diagnostic.turnRequestSent).toBeUndefined();
+    expect(JSON.stringify(error)).not.toContain('private-token');
+  });
+  it.each([
+    ['no rollout found for thread id 00000000-0000-4000-8000-000000000001', 'thread-not-found'],
+    ['private-provider-text Bearer private-token', 'rejected'],
+  ])('safely classifies a rejected session without retaining provider prose: %s', async (message, reason) => {
+    const connection = new ScriptedConnection([{ id: 1, result: {} }, policyResponse, { id: 3, error: { code: -32600, message } }]);
+    const error = await collect(new CodexAdapter('fixture', '.', consent, () => connection, async () => []).run(request())).catch(error => error);
+    expect(error.diagnostic).toMatchObject({ method: 'thread/start', reason, turnRequestSent: false });
+    expect(JSON.stringify(error)).not.toContain('private-token'); expect(error.message).not.toContain(message);
+    expect(connection.sent).not.toEqual(expect.arrayContaining([expect.objectContaining({ method: 'turn/start' })]));
+  });
   it('records the matching turn usage only, without estimating token or billing values', async () => {
     const messages: unknown[] = codexMessages();
     const last = { totalTokens: 21, inputTokens: 12, cachedInputTokens: 3, cacheWriteInputTokens: 2, outputTokens: 9, reasoningOutputTokens: 4 };

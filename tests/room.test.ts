@@ -10,6 +10,13 @@ import { roomStateSchema, roomInputSchema, ROOM_CONTROL_START, ROOM_CONTROL_END,
 import type { AgentAdapter, TurnRequest, AgentEvent } from '../src/adapters/types.js';
 import { waitUntil } from './helpers.js';
 import { withDelivery } from './fixtures/conclusion.js';
+import { RpcRejectionError } from '../src/adapters/process.js';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { RoomDiagnostics } from '../web/RoomDiagnostics.js';
+import { seatViews } from '../web/seats.js';
+import { getLocale, setLocale } from '../web/i18n.js';
+import { reasonText } from '../web/api.js';
 
 const envelope = (r: TurnRequest, action: RoomControl['action'], text = 'Public fixture answer.', continuation: RoomControl['continuation'] = 'yield') =>
   `${text}\n${ROOM_CONTROL_START}\n${JSON.stringify({ version: 3, taskVersion: r.room!.taskVersion, grantId: r.room!.grantId, continuation, action: withDelivery(action) })}\n${ROOM_CONTROL_END}`;
@@ -33,6 +40,63 @@ async function setup(respond: (r: TurnRequest) => string = fakeRoomResponse, fau
   return { directory, store, controller, requests, cleanup: async () => { await controller.close(); await rm(directory, { recursive: true, force: true }); } };
 }
 describe('independent moderator discussions', () => {
+  it.each([false, true])('preserves failure evidence and explicit rebuild when turn submission is %s', async submitted => {
+    let armed = false;
+    const sessions: Array<string | undefined> = [];
+    const ctx = await setup(undefined, undefined, 0, 10_000, (provider, actor) => ({ id: provider, backend: 'fake',
+      async *run(r): AsyncGenerator<AgentEvent> {
+        sessions.push(r.session?.id);
+        if (armed) {
+          if (submitted) {
+            yield { type: 'session', session: { id: r.session!.id, model: r.settings.model, backend: 'fake' } };
+            yield { type: 'delta', text: 'Incomplete fixture response.' };
+          }
+          const error = new RpcRejectionError(submitted ? 'turn/start' : 'thread/resume', {
+            code: -32600, message: submitted ? 'private-provider-text' : `thread ${randomUUID()} already has an active writer`, data: { token: 'private-token' },
+          });
+          if (!submitted) error.beforeTurnSubmission();
+          throw error;
+        }
+        yield { type: 'session', session: { id: r.session?.id ?? randomUUID(), model: r.settings.model, backend: 'fake' } };
+        yield { type: 'completed', model: r.settings.model, text: envelope(r, { type: 'none' }, `Saved answer from ${actor}.`) };
+      } }));
+    try {
+      const id = randomUUID(); await ctx.controller.create(id, roomInput({ moderator: null }));
+      await ctx.controller.start(id, randomUUID()); await ctx.controller.wait(id);
+      const before = ctx.controller.get(id); armed = true;
+      await ctx.controller.start(id, randomUUID()); await ctx.controller.wait(id);
+      const failed = ctx.controller.get(id), failure = failed.room.calls.at(-1)!.providerFailure!;
+      expect(failed.status).toBe('indeterminate'); expect(failure.rpcCode).toBe(-32600);
+      expect(failure.turnRequestSent).toBe(submitted ? undefined : false);
+      expect(failed.messages.slice(0, before.messages.length)).toEqual(before.messages);
+      expect(failed.messages).toHaveLength(before.messages.length + Number(submitted));
+      if (!submitted) expect(failed.pauseReason).toContain('本次回合尚未送出');
+      else expect(failed.messages.at(-1)).toMatchObject({ status: 'indeterminate', text: 'Incomplete fixture response.' });
+      if (!submitted) {
+        const locale = getLocale();
+        try {
+          for (const language of ['zh-TW', 'en'] as const) {
+            setLocale(language);
+            const html = renderToStaticMarkup(createElement(RoomDiagnostics, { state: failed, seats: seatViews(failed) }));
+            expect(html).toContain(language === 'en' ? 'Session is held by another process' : '工作階段被其他程序占用');
+            expect(html).toContain(language === 'en' ? 'This turn was not submitted' : '本次回合尚未送出');
+            expect(html).toContain('thread/resume (-32600)');
+            expect(reasonText(failed.pauseReason)).toContain(language === 'en' ? 'rebuild the sessions' : '請重建工作階段');
+          }
+        } finally { setLocale(locale); }
+      }
+      const records = await ctx.store.records(id);
+      expect(records.at(-1)!.state.room.calls.at(-1)!.providerFailure).toEqual(failure);
+      expect(records.some(r => r.event.data.providerFailure)).toBe(true);
+      expect(JSON.stringify(records)).not.toContain('private-token'); expect(JSON.stringify(records)).not.toContain('private-provider-text');
+      await expect(ctx.controller.start(id, randomUUID())).rejects.toMatchObject({ code: 'RECONCILIATION_REQUIRED' });
+      const count = sessions.length; await ctx.controller.rebuild(id, randomUUID(), failed.room.taskVersion);
+      expect(sessions).toHaveLength(count); expect(ctx.controller.get(id).room.sessions).toEqual({});
+      expect(ctx.controller.get(id).status).toBe('paused'); armed = false;
+      await ctx.controller.start(id, randomUUID()); await ctx.controller.wait(id);
+      expect(sessions[count]).toBeUndefined(); expect(ctx.controller.get(id).status).toBe('paused');
+    } finally { await ctx.cleanup(); }
+  });
   it.each([2, 3, 4])('runs one manual round with %s speakers and an independent same-provider moderator session', async count => {
     const ctx = await setup();
     try {

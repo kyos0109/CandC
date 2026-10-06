@@ -2,6 +2,30 @@ import { observe, type PerformanceObserver, type Phase } from '../performance.js
 import { spawn, execFile, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { z } from 'zod';
 import { AppError } from '../domain.js';
+import type { ProviderFailure } from '../room-contract.js';
+
+/** Preserve only allowlisted RPC metadata; provider prose/data may contain private input. */
+export class RpcRejectionError extends AppError {
+  readonly diagnostic: ProviderFailure;
+  constructor(method: string, error: unknown) {
+    const safeMethod: ProviderFailure['method'] = ['initialize', 'config/read', 'thread/start', 'thread/resume', 'turn/start'].includes(method) ? method as ProviderFailure['method'] : 'other';
+    super('RPC_ERROR', `App-server rejected ${safeMethod}.`);
+    const value = error && typeof error === 'object' ? error as Record<string, unknown> : {};
+    const message = typeof value.message === 'string' && value.message.length <= 200 ? value.message : '';
+    const sessionMethod = safeMethod === 'thread/start' || safeMethod === 'thread/resume';
+    const uuid = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
+    const reason: ProviderFailure['reason'] = sessionMethod && new RegExp(`^thread ${uuid} already has an active writer$`, 'i').test(message) ? 'active-writer' :
+      sessionMethod && new RegExp(`^no rollout found for thread id ${uuid}$`, 'i').test(message) ? 'thread-not-found' : 'rejected';
+    this.diagnostic = { provider: 'codex', method: safeMethod, reason,
+      ...(typeof value.code === 'number' && Number.isSafeInteger(value.code) ? { rpcCode: value.code } : {}) };
+  }
+  beforeTurnSubmission() {
+    this.diagnostic.turnRequestSent = false;
+    this.message = this.diagnostic.reason === 'active-writer' ? 'Codex 工作階段被其他程序占用；本次回合尚未送出，請重建工作階段。' :
+      this.diagnostic.reason === 'thread-not-found' ? 'Codex 工作階段不存在；本次回合尚未送出，請重建工作階段。' :
+        'Codex 工作階段建立或恢復遭拒；本次回合尚未送出，請重建工作階段。';
+  }
+}
 
 export type ProcessSpec = { executable: string; args: string[]; cwd: string; signal: AbortSignal; env?: NodeJS.ProcessEnv; observePerformance?: PerformanceObserver | undefined; startedPhase?: Phase };
 export interface JsonConnection {
@@ -175,7 +199,7 @@ export class RpcConnection {
     while (true) {
       const message = await this.read();
       if (message.id === id) {
-        if (message.error !== undefined) throw new AppError('RPC_ERROR', `App-server rejected ${method}.`);
+        if (message.error !== undefined) throw new RpcRejectionError(method, message.error);
         return message.result;
       }
       if (message.method) {

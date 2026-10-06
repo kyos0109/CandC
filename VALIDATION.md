@@ -4,6 +4,57 @@ This is a dated record of observed checks, not a development backlog. Run only
 checks relevant to the current task; see [CONTRIBUTING.md](CONTRIBUTING.md).
 Contracts belong to their owning documents listed in [AGENTS.md](AGENTS.md).
 
+## Codex session rejection and reviewed idle scheduling (2026-10-06)
+
+Scope: allowlisted Codex RPC failure diagnostics, the distinction between a
+rejected session and an unknown-result turn, explicit session reconstruction,
+and stopping idle `done` speakers without accepting unresolved review gaps.
+
+Observed checks:
+
+- All 134 affected tests in five files passed, including failure metadata and
+  private-error removal, partial-answer preservation, explicit rebuild without
+  replay, free/alternating idle scheduling and queued work despite `done`.
+- The final full coverage run passed all 552 tests in 49 files, including
+  concurrent speaking-task tests, with two workers and unchanged gates:
+  lines 78.93%, statements 67.84%, functions 54.80%, branches 62.45%.
+- Backend/frontend typechecks and isolated compilation passed. Normal runtime
+  outputs were not replaced; the existing frontend chunk-size warning remains.
+- The complete fake-provider browser suite passed all 65 cases in 3.6 minutes,
+  including new session-rejection recovery and reviewed-idle cases in both
+  interface languages. This browser snapshot precedes separate concurrent
+  speaking-task interface changes; those changes are outside this repair scope.
+  The default managed browser was absent, so verification selected the already
+  installed compatible Chromium headless shell (151.0.7922.34).
+  Both new browser cases passed again on the latest isolated build after the
+  concurrent interface changes. The continuation test now waits for both a new
+  call and the final paused state, removing a premature idle-observation race.
+- The public-source and Git-history secret scans passed without leaks. Diff
+  whitespace checks passed.
+
+An intermediate full-suite run exposed missing translations in concurrent
+speaking-task UI work and timeout failures under parallel verification. Lowering
+the worker count to two removed the timeout failures without changing assertions
+or coverage thresholds. The concurrent translations were present in the final
+passing full-suite snapshot. Unrelated source changes were preserved.
+
+All automated model execution used fake providers and disposable journals. No
+real discussion was rebuilt or resumed, no CLI authentication or live call was
+performed, and no service restart, normal build replacement, commit or push was
+performed. The fix reports an active writer and requires explicit recovery; it
+does not isolate the shared Codex home or prevent another process taking a thread.
+Older strict-schema binaries require a matching journal/build pair for rollback
+after new failure metadata has been written.
+
+Commit-scoped recheck: an isolated checkout exported from the Git index excluded
+all unrelated speaking-task source, tests and locale edits. This exact repair
+snapshot passed all 546 tests in 48 files with two workers and unchanged coverage
+gates: lines 79.10%, statements 68.03%, functions 54.99%, branches 62.82%.
+Backend/frontend typechecks, isolated compilation and both new browser cases
+passed on that snapshot. The lower test count excludes six unrelated tests that
+were present in the earlier working-tree check. Review and staged whitespace
+checks found no blocking issue within this repair scope.
+
 > **Commit scope:** This revision includes the source, tests and contracts for the
 > facilitator, neutral-exchange and repair/fallback changes. Earlier entries retain
 > their dated working-tree scope. See [implementation status](docs/IMPLEMENTATION_STATUS.md)

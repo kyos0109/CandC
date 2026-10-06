@@ -11,6 +11,7 @@ import { roomInputSchema, parseRoomAnswer, roomPreview, isJudge, type RoomInput,
 import { PerformanceStore, type Measurement, type PerformanceObserver, type PerformanceRecord } from './performance.js';
 import { emptyWorkflow, continuationTask, runnableTasks, updateWorkflow } from './discussion-policy.js';
 import { deliveryProblem, type ConclusionDelivery } from './conclusion.js';
+import { RpcRejectionError } from './adapters/process.js';
 
 const savedDelivery = (delivery?: ConclusionDelivery) => delivery ? { ...delivery, basis: delivery.basis.map(value => redact(value)) } : undefined;
 
@@ -288,11 +289,14 @@ export class RoomController {
         if (!this.store.isBlocked(id)) await this.exclusive(async () => {
           const s = this.get(id); const saved = s.room.calls.find(c => c.id === call.id); if (saved?.status === 'completed') return;
           const cancelled = runtime.abort.signal.aborted || signal?.aborted === true;
+          const providerFailure = error instanceof RpcRejectionError ? { ...error.diagnostic } : undefined;
+          const notSubmitted = providerFailure?.turnRequestSent === false && native === null && !partial && final === null;
           const message = this.message(s, actor, redact(roomPreview(partial)), purpose === 'moderation' || purpose === 'monitor' ? 'moderation' : purpose === 'summary' ? 'summary' : 'discussion', cancelled ? 'cancelled' : 'indeterminate', call.id, call.taskVersion);
           if (runtime.turn?.interrupted && actor !== 'moderator') message.interruptedBy = 'moderator';
           const sessions = { ...s.room.sessions }; delete sessions[actor];
-          await this.commit({ ...s, messages: purpose === 'monitor' ? s.messages : [...s.messages, message],
-            room: { ...s.room, sessions, calls: s.room.calls.map(c => c.id === call.id ? { ...c, status: cancelled ? 'cancelled' : 'failed', durationMs: Date.now() - started } : c) } }, 'error', { callId: call.id, participant: actor, error: safeError(error) });
+          await this.commit({ ...s, messages: purpose === 'monitor' || notSubmitted ? s.messages : [...s.messages, message],
+            room: { ...s.room, sessions, calls: s.room.calls.map(c => c.id === call.id ? { ...c, status: cancelled ? 'cancelled' : 'failed', durationMs: Date.now() - started,
+              ...(providerFailure ? { providerFailure } : {}) } : c) } }, 'error', { callId: call.id, participant: actor, error: safeError(error), ...(providerFailure ? { providerFailure } : {}) });
         });
       } catch (commitError) { outcome = this.measurementOutcome(id, commitError, request.signal, runtime, measurement, signal?.aborted); throw commitError; }
       finally { measurement?.end(outcome); }
@@ -490,6 +494,12 @@ export class RoomController {
       const p = eligible[(start + i) % eligible.length]!;
       const message = s.messages.findLast(m => m.sender === p.id && m.purpose === 'discussion' && m.status === 'completed');
       const unseenUser = this.eligible(s, p.id).some(m => m.sender === 'user' && !this.sessionFor(s, p.id)?.delivered.includes(m.id));
+      const proposal = s.room.proposal;
+      const needsReview = proposal && !proposal.confirmed.includes(p.id) && !proposal.reviews?.some(r => r.actor === p.id);
+      const unseenAuthor = proposal && proposal.author !== p.id && this.eligible(s, p.id).some(m => m.purpose === 'discussion' && m.sender === proposal.author &&
+        !this.sessionFor(s, p.id)?.delivered.includes(m.id));
+      // A recorded review with gaps cannot confirm the proposal or by itself keep a done seat runnable.
+      if (proposal && message?.continuation === 'done' && !unseenUser && !unseenAuthor && !needsReview) continue;
       if (s.flow !== 'free' || !message || message.continuation !== 'done' || unseenUser || s.room.proposal && !s.room.proposal.confirmed.includes(p.id)) return p.id;
     }
     return null;
@@ -525,7 +535,7 @@ export class RoomController {
           let actor: ParticipantId | null = correction?.target ?? invitation?.target ?? this.nextSpeaker(s, previous);
           const next = continuationTask(s);
           if (!actor && next && ++runtime.redirects <= 3) actor = next.target;
-          if (!actor) { await this.exclusive(async () => { const current = this.get(id); if (current.status === 'running' && !runtime.abort.signal.aborted) await this.commit({ ...current, status: 'paused', pauseReason: next ? '未完成必要的分析或核對；已達調度修正上限，請查看階段成果。' : current.room.workflow ? '目前沒有可執行任務；保留階段成果與待補充問題。' : '所有參與者等待新輸入。' }); }); break; }
+          if (!actor) { await this.exclusive(async () => { const current = this.get(id); if (current.status === 'running' && !runtime.abort.signal.aborted) await this.commit({ ...current, status: 'paused', pauseReason: next ? '未完成必要的分析或核對；已達調度修正上限，請查看階段成果。' : current.room.proposal ? '提案尚未通過審查；目前沒有新的可執行工作，已保留提案與缺漏。' : current.room.workflow ? '目前沒有可執行任務；保留階段成果與待補充問題。' : '所有參與者等待新輸入。' }); }); break; }
           if (correction && !substantiveReview && actor === correction.target) {
             const key = `${s.room.taskVersion}:${correction.target}:${s.room.proposal?.id ?? 'delivery'}`;
             if (runtime.deliveryRepair?.key !== key) runtime.deliveryRepair = { key, attempts: 0, callId: null };

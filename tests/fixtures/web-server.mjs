@@ -12,6 +12,7 @@ const { ROOM_CONTROL_START, ROOM_CONTROL_END, parseRoomAnswer } = await load('ro
 const { roomStateSchema } = await load('room-contract.js');
 const { DiscussionStore } = await load('store.js');
 const { PerformanceStore } = await load('performance.js');
+const { RpcRejectionError } = await load('adapters/process.js');
 const { createServer } = await load('server.js');
 const { CONTROL_START, CONTROL_END } = await load('focused.js');
 const directory = await mkdtemp(path.resolve('.cache/e2e-'));
@@ -63,6 +64,16 @@ const performance = new PerformanceStore(path.join(directory, 'performance'), tr
 const legacy = new DiscussionController(new DiscussionStore(directory, fault), { codex: new FakeAdapter('codex', contribution('codex'), 15), claude: new FakeAdapter('claude', contribution('claude'), 15) }, undefined, undefined, performance);
 const adapters = new Map();
 const policyResponse = request => {
+  if (request.topic === 'Reviewed idle fixture.') {
+    const r = request.room;
+    const peer = r.messages.findLast(m => m.sender !== 'user' && m.sender !== r.actor && m.purpose === 'discussion');
+    const action = !r.proposal ? { type: 'propose', result: 'Conditional fixture answer.', dissent: ['A retained objection.'], unresolved: ['Missing fixture evidence.'],
+      delivery: { status: 'partial', kind: 'answer', basis: ['Fixture reasoning only.'] } } :
+      r.actor === 'claude' && !r.proposal.reviews?.length ? { type: 'confirm', proposalId: r.proposal.id,
+        review: { adequate: true, reason: 'The conditional answer is accepted with a requested-content gap.', gaps: ['Missing fixture evidence.'] } } : { type: 'none' };
+    return `Saved fixture response from ${r.actor}.\n${ROOM_CONTROL_START}\n${JSON.stringify({ version: 3, taskVersion: r.taskVersion, grantId: r.grantId, continuation: 'done', action,
+      references: peer ? [{ messageId: peer.id, disposition: 'checked', reason: 'Fixture peer argument assessed.' }] : [] })}\n${ROOM_CONTROL_END}`;
+  }
   const text = fakeRoomResponse(request);
   if (request.topic.startsWith('Review handoff fixture:')) {
     const { control } = parseRoomAnswer(text), r = request.room;
@@ -116,7 +127,22 @@ const policyResponse = request => {
     answeredQuestions: answered ? [{ key: 'budget', sources: [answered.id] }] : [] };
   return parsed.text + '\n' + ROOM_CONTROL_START + '\n' + JSON.stringify(control) + '\n' + ROOM_CONTROL_END;
 };
-const rooms = new RoomController(new DiscussionStore(directory, fault, roomStateSchema), (provider, workspace) => { if (!adapters.has(workspace)) adapters.set(workspace, new RoomFakeAdapter(provider, policyResponse, 3)); return adapters.get(workspace); }, undefined, performance);
+const rejectedRooms = new Set();
+const rooms = new RoomController(new DiscussionStore(directory, fault, roomStateSchema), (provider, workspace) => {
+  if (!adapters.has(workspace)) {
+    const fake = new RoomFakeAdapter(provider, policyResponse, 3);
+    adapters.set(workspace, { id: provider, backend: 'fake', async *run(request) {
+      const roomId = path.basename(path.dirname(path.dirname(workspace)));
+      if (request.topic === 'Session rejection fixture.' && request.session && !rejectedRooms.has(roomId)) {
+        rejectedRooms.add(roomId);
+        const error = new RpcRejectionError('thread/resume', { code: -32600, message: 'thread 00000000-0000-4000-8000-000000000001 already has an active writer' });
+        error.beforeTurnSubmission(); throw error;
+      }
+      yield* fake.run(request);
+    } });
+  }
+  return adapters.get(workspace);
+}, undefined, performance);
 const controller = new DiscussionService(legacy, rooms);
 await controller.initialize();
 const server = createServer(controller, { testFixture: true, webRoot: path.join(build, 'web-dist'), environment: async () => ({ node: process.version, codex: { version: 'fixture', authentication: 'not_logged_in', ready: false }, claude: { version: 'fixture', authentication: null, ready: false }, ready: false, loginCommands: { codex: 'codex login', claude: 'claude auth login' } }), models: async () => [{ id: 'fixture-codex', label: 'Fixture Codex', efforts: ['low', 'high'] }] });

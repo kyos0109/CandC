@@ -11,7 +11,7 @@ import { liveProgress, roomTimeline } from './roomEvents';
 import { seatViews, seatOf } from './seats';
 import { SeatAvatar } from './SeatAvatar';
 import { Icon } from './Icon';
-import { ConsensusStrip, OutcomeCard, RecipientChips, RoomEventRow, RoomMessage, RoomPending, RosterPanel, SeatStrip, privacyNote } from './RoomParts';
+import { ConsensusStrip, OutcomeCard, RecipientChips, RoomEventRow, RoomMessage, RoomPending, RosterPanel, SeatStrip, StageGrant, privacyNote } from './RoomParts';
 import { RoomSettings } from './RoomSettings';
 import { RoomResult } from './RoomResult';
 import { RoomDiagnostics } from './RoomDiagnostics';
@@ -73,7 +73,7 @@ export function RoomView({ state, progress, busy, perform, panel, setPanel, hist
     {tab === 'result' && <RoomResult state={state} seats={seats} locked={locked} jump={jump} onSummary={() => void command('summary')}/>}
     {tab === 'diagnostics' && <RoomDiagnostics state={state} seats={seats}/>}
     {tab === 'chat' && <>
-      {grant && <div className="stage-grant"><SeatAvatar seat={seatOf(seats, 'moderator')} size="sm"/><span>{translate("主持人請")}{" "}<b>{seatOf(seats, grant.target).name}</b>：{grant.task}</span></div>}
+      {grant && <StageGrant key={grant.id} grant={grant} state={state} seats={seats} live={speaking === grant.target}/>}
       <div className="conversation-region"><div className="messages" aria-label={translate("對話內容")} aria-live="polite" tabIndex={0} ref={viewport} onScroll={e => { if (!visible) return; const v = e.currentTarget; follow.current = v.scrollHeight - v.scrollTop - v.clientHeight < 80; if (follow.current) setNewContent(false); }}>
         {items.map(item => item.kind === 'event' ? <RoomEventRow key={item.id} event={item} seats={seats}/> : <Fragment key={item.message.id}>{dividers.get(item.message.id)}<RoomMessage message={item.message} seats={seats} messages={state.messages} demo={state.backend === 'fake'} proposalId={proposal?.id ?? null} readingMode={readingMode} canReply={!terminal && !state.storage} onReply={draftReply} jump={jump}/></Fragment>)}
         {active && <RoomPending seat={seatOf(seats, speakerId)} preview={live?.preview}/>}

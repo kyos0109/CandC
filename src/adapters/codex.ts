@@ -5,7 +5,7 @@ import type { ThreadStartParams } from '../generated/codex/v2/ThreadStartParams.
 import type { ThreadResumeParams } from '../generated/codex/v2/ThreadResumeParams.js';
 import type { TurnStartParams } from '../generated/codex/v2/TurnStartParams.js';
 import { AppError } from '../domain.js';
-import { JsonLineProcess, RpcConnection, type ProcessFactory } from './process.js';
+import { JsonLineProcess, RpcConnection, RpcRejectionError, type ProcessFactory } from './process.js';
 import { assertLiveAuthorized, buildPrompt, type AgentAdapter, type AgentEvent, type LiveAuthorization, type TurnRequest } from './types.js';
 import { researchConfig, readEvidence } from './research-config.js';
 import path from 'node:path';
@@ -90,7 +90,10 @@ export class CodexAdapter implements AgentAdapter {
       observe(request.observePerformance, 'sessionEnd');
       yield { type: 'session', session: { id: thread.thread.id, model: thread.model, backend: 'live' } };
       yield* this.executeTurn(rpc, request, thread.thread.id, thread.model, mcp);
-    } catch (error) { observe(request.observePerformance, 'failureObserved'); throw error; } finally { observe(request.observePerformance, 'cleanupStart'); await process.close(); observe(request.observePerformance, 'cleanupEnd'); yield { type: 'stage', phase: 'cleanup' }; }
+    } catch (error) {
+      if (error instanceof RpcRejectionError && ['thread/start', 'thread/resume'].includes(error.diagnostic.method)) error.beforeTurnSubmission();
+      observe(request.observePerformance, 'failureObserved'); throw error;
+    } finally { observe(request.observePerformance, 'cleanupStart'); await process.close(); observe(request.observePerformance, 'cleanupEnd'); yield { type: 'stage', phase: 'cleanup' }; }
   }
 
   private async openSession(rpc: RpcConnection, request: TurnRequest) {

@@ -1,13 +1,14 @@
 import { translate } from './i18n.js';
-import type { RoomDiscussion } from '../src/room-contract';
-import { PerformancePanel } from './PerformancePanel';
-import { hhmm } from './RoomParts';
-import { seatOf, type SeatView } from './seats';
+import type { RoomDiscussion } from '../src/room-contract.js';
+import { PerformancePanel } from './PerformancePanel.js';
+import { hhmm } from './RoomParts.js';
+import { seatOf, type SeatView } from './seats.js';
 
 type Seats = Record<string, SeatView>;
 const purposes = { get discussion() { return translate("發言"); }, get moderation() { return translate("主持"); }, get monitor() { return translate("監看"); }, get summary() { return translate("整理"); } };
 const statuses = { get prepared() { return translate("進行中"); }, get completed() { return translate("完成"); }, get cancelled() { return translate("已中止"); }, get failed() { return translate("失敗"); } };
 const seconds = (ms: number | null) => ms === null ? '—' : `${(ms / 1000).toFixed(1)} s`;
+const failureLabels = { 'active-writer': '工作階段被其他程序占用', 'thread-not-found': '工作階段不存在', rejected: '供應商拒絕請求' };
 const metadataLabels = {
   'work-schema': '工作回報格式無效', 'work-reference': '工作回報來源或權限無效', 'work-limit': '工作回報超過容量',
   'references-schema': '回應引用格式無效', references: '回應引用不在可見內容內', 'delivery-schema': '交付說明格式無效',
@@ -21,7 +22,7 @@ export function RoomDiagnostics({ state, seats }: { state: RoomDiscussion; seats
   return <div className="room-page"><div className="room-page-inner">
     <h1>{translate("診斷")}</h1><p className="lead">{translate("呼叫按 agent、session 與任務版本記錄；接收輸入與完成回答分別保存。")}</p>
     <section className="surface-card"><div className="table-wrap"><table className="data-table"><thead><tr><th>{translate("座位")}</th><th>{translate("用途")}</th><th>{translate("狀態")}</th><th>{translate("耗時")}</th><th>{translate("任務版本")}</th><th>Native session</th></tr></thead>
-      <tbody>{state.room.calls.length === 0 ? <tr><td colSpan={6}>{translate("尚無呼叫。")}</td></tr> : state.room.calls.map(call => <tr key={call.id}><td>{name(call.participant)}</td><td>{purposes[call.purpose]}</td><td>{statuses[call.status]}{call.controlDiagnostic && <small>{" "}{translate("· 控制檢查：")}{call.controlDiagnostic}</small>}{call.metadataDiagnostics?.map(code => <small key={code}>{" "}{translate("附加資料未採用：")}{translate(metadataLabels[code])}</small>)}</td><td>{seconds(call.durationMs)}</td><td>v{call.taskVersion}</td><td className="mono">{call.nativeSessionId?.slice(0, 18) ?? '—'}</td></tr>)}</tbody></table></div></section>
+      <tbody>{state.room.calls.length === 0 ? <tr><td colSpan={6}>{translate("尚無呼叫。")}</td></tr> : state.room.calls.map(call => <tr key={call.id}><td>{name(call.participant)}</td><td>{purposes[call.purpose]}</td><td>{statuses[call.status]}{call.providerFailure && <small>{" "}{translate(failureLabels[call.providerFailure.reason])}{call.providerFailure.turnRequestSent === false && <> · {translate("本次回合尚未送出")}</>} · {call.providerFailure.method}{call.providerFailure.rpcCode !== undefined && ` (${call.providerFailure.rpcCode})`}</small>}{call.controlDiagnostic && <small>{" "}{translate("· 控制檢查：")}{call.controlDiagnostic}</small>}{call.metadataDiagnostics?.map(code => <small key={code}>{" "}{translate("附加資料未採用：")}{translate(metadataLabels[code])}</small>)}</td><td>{seconds(call.durationMs)}</td><td>v{call.taskVersion}</td><td className="mono">{call.nativeSessionId?.slice(0, 18) ?? '—'}</td></tr>)}</tbody></table></div></section>
     <section className="surface-card"><div className="table-wrap"><table className="data-table"><thead><tr><th>{translate("座位")}</th><th>{translate("供應商")}</th><th>{translate("目前 session")}</th><th>{translate("已送達訊息")}</th></tr></thead>
       <tbody>{[...state.participants, ...(state.moderator ? [state.moderator] : [])].map(p => { const session = Object.hasOwn(state.room.sessions, p.id) ? state.room.sessions[p.id] : undefined; return <tr key={p.id}><td>{name(p.id)}</td><td>{p.provider}</td><td className="mono">{session?.id.slice(0, 18) ?? translate("尚未建立／已退役")}</td><td>{session?.delivered.length ?? 0}</td></tr>; })}</tbody></table></div></section>
     {state.moderator && <section className="surface-card padded"><h3>{translate("主持人指令")}</h3>
