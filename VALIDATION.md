@@ -4,6 +4,43 @@ This is a dated record of observed checks, not a development backlog. Run only
 checks relevant to the current task; see [CONTRIBUTING.md](CONTRIBUTING.md).
 Contracts belong to their owning documents listed in [AGENTS.md](AGENTS.md).
 
+## Manual conversation management (2026-10-06)
+
+Scope: manual Active/Archived/Trash folders for versions 1/2/3, read-only archived
+content, restoration, batch management, summary pagination/search/date filtering,
+and explicitly confirmed permanent deletion with durable markers and retry.
+The owning contract is [DISCUSSION_MANAGEMENT.md](docs/DISCUSSION_MANAGEMENT.md).
+
+Observed checks on the final working tree:
+
+- All 17 management regressions passed, covering mixed-version persistence,
+  unchanged content/authority, running and storage barriers, journal/marker
+  write/sync/close failures, partial deletion, restart/retry, ID reuse prevention,
+  exact file isolation, HTTP authentication, pagination and SSE cleanup.
+- The final full coverage run passed all 569 tests in 50 files with one worker
+  and unchanged gates: lines 78.63%, statements 67.35%, functions 54.96%,
+  branches 62.19%. Intermediate two-worker runs timed out in an existing
+  five-second revision case; its focused coverage recheck and the complete
+  one-worker run passed without changing assertions or timeouts.
+- All 75 fake-provider browser cases passed in 3.7 minutes. The seven management
+  cases cover legacy drafts/read-only controls, Chinese/English, both themes,
+  desktop/mobile, undo, exports, fixed empty-trash snapshots and failed batch
+  selections. Mobile cases now wait for the completed UI transition rather than
+  treating backend persistence as evidence that the history drawer has closed.
+- Backend/frontend typechecks and isolated compilation passed; normal runtime
+  outputs were preserved. The existing frontend chunk-size warning remains.
+  Browser verification used the installed compatible Chromium headless shell.
+- Public-source/Git-history secret scans, affected documentation links and diff
+  whitespace checks passed. Existing unrelated changes were preserved.
+
+Verification used disposable journals and fake providers without real `data/`,
+CLI authentication, live calls, service restart, normal build replacement, commit
+or push. Fault injection does not establish real device power-loss durability.
+Deletion retains content-free markers and does not remove downloaded exports,
+agent workspaces or CLI-native histories. Older strict-schema builds may reject
+new management metadata; rollback requires a matching saved data/build pair,
+and cannot reverse permanent deletion. No automatic retention policy was added.
+
 ## Codex session rejection and reviewed idle scheduling (2026-10-06)
 
 Scope: allowlisted Codex RPC failure diagnostics, the distinction between a

@@ -1,5 +1,5 @@
 import { encode, decode, recordSchema, JournalCorruptionError, type JournalDiscussion, type StoredRecord } from './journal-codec.js';
-import { mkdir, open, readFile, readdir, rename, truncate, writeFile, unlink, type FileHandle } from 'node:fs/promises';
+import { mkdir, open, readFile, readdir, rename, truncate, writeFile, unlink, lstat, type FileHandle } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { gzipSync } from 'node:zlib';
@@ -7,6 +7,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { z } from 'zod';
 import { AppError, discussionStateSchema, runEventSchema, type Discussion, type RunEvent } from './domain.js';
 import { withJournalLock } from './journal-lock.js';
+import { folderOf } from './management.js';
 
 const idSchema = z.uuid();
 class JournalVersionConflict extends AppError {
@@ -15,11 +16,84 @@ class JournalVersionConflict extends AppError {
 export class DiscussionStore<T extends JournalDiscussion = Discussion> {
   private readonly latest = new Map<string, T>();
   private readonly blocked = new Map<string, { reason: string; pending?: PendingCommit }>();
+  private readonly deleted = new Set<string>();
   constructor(private readonly directory: string, private readonly fault?: StorageFault,
     private readonly stateContract: z.ZodType<T> = discussionStateSchema as unknown as z.ZodType<T>) {}
   private typed(state: JournalDiscussion): T { return this.stateContract.parse(state); }
   storageIssues() { return [...this.blocked].map(([id, issue]) => ({ id, reason: issue.reason })); }
   isBlocked(id: string) { return this.blocked.has(id); }
+  isDeleted(id: string) { return this.deleted.has(id); }
+  async assertAvailable(id: string) {
+    if (this.deleted.has(id) || await this.exists(this.file(id, 'deleted.json'))) {
+      this.deleted.add(id); throw new AppError('DISCUSSION_DELETED', 'Discussion was permanently deleted.', 410);
+    }
+  }
+  private async exists(file: string) {
+    try { await lstat(file); return true; }
+    catch (error) { if (missing(error)) return false; throw error; }
+  }
+  private deletionFiles(id: string, files: string[]) {
+    const suffix = /^(jsonl|unconfirmed\.json|jsonl\.compacting|jsonl\.(?:backup|recovery)-\d+\.gz)$/;
+    return files.filter(name => name.startsWith(`${id}.`) && suffix.test(name.slice(id.length + 1)));
+  }
+  async deletionIssues(): Promise<Array<{ id: string; reason: string; expectedSequence?: number }>> {
+    await mkdir(this.directory, { recursive: true });
+    const files = await readdir(this.directory), issues: Array<{ id: string; reason: string; expectedSequence?: number }> = [];
+    for (const name of files) {
+      if (!name.endsWith('.deleted.json')) continue;
+      const id = name.slice(0, -13); if (!idSchema.safeParse(id).success) continue;
+      this.deleted.add(id); this.latest.delete(id); this.blocked.delete(id);
+      try {
+        const file = this.file(id, 'deleted.json');
+        if (!(await lstat(file)).isFile() || (await lstat(file)).isSymbolicLink()) throw new Error('Invalid deletion marker file.');
+        const marker = deletionSchema.parse(JSON.parse(await readFile(file, 'utf8')));
+        if (marker.id !== id) throw new Error('Deletion marker ID mismatch.');
+        if (this.deletionFiles(id, files).length) issues.push({ id, reason: 'Deletion is incomplete. Retry permanent deletion.', expectedSequence: marker.expectedSequence });
+      } catch { issues.push({ id, reason: 'Deletion marker is unconfirmed. Preserve the files for inspection.' }); }
+    }
+    return issues;
+  }
+  async permanentDelete(id: string, operationId: string, expectedSequence: number) {
+    idSchema.parse(id); idSchema.parse(operationId);
+    return withJournalLock(this.file(id, 'jsonl'), async () => {
+      const markerFile = this.file(id, 'deleted.json');
+      let marker: z.infer<typeof deletionSchema>;
+      if (await this.exists(markerFile)) {
+        this.deleted.add(id); this.latest.delete(id);
+        const info = await lstat(markerFile);
+        if (!info.isFile() || info.isSymbolicLink()) throw new AppError('STORAGE_UNCONFIRMED', 'Deletion marker is unconfirmed.');
+        try { marker = deletionSchema.parse(JSON.parse(await readFile(markerFile, 'utf8'))); }
+        catch { throw new AppError('STORAGE_UNCONFIRMED', 'Deletion marker is unconfirmed.'); }
+        if (marker.id !== id || marker.expectedSequence !== expectedSequence) throw new AppError('VERSION_CONFLICT', 'Deletion marker does not match this request.');
+      } else {
+        if (this.blocked.has(id) || await this.exists(this.file(id, 'unconfirmed.json'))) throw new AppError('STORAGE_UNCONFIRMED', 'Recover storage before deletion.');
+        const journal = this.file(id, 'jsonl'), info = await lstat(journal);
+        if (!info.isFile() || info.isSymbolicLink()) throw new AppError('INVALID_STATE', 'Invalid journal file.');
+        const state = this.typed(decode(await readFile(journal, 'utf8'), id).at(-1)!.state);
+        if (folderOf(state) !== 'trash') throw new AppError('INVALID_STATE', 'Move the discussion to trash before permanent deletion.');
+        if (state.sequence !== expectedSequence) throw new AppError('VERSION_CONFLICT', 'Discussion changed; refresh before deleting it.');
+        marker = { version: 1, id, operationId, expectedSequence, deletedAt: new Date().toISOString() };
+        const handle = await open(markerFile, 'wx');
+        this.deleted.add(id); this.latest.delete(id);
+        try { await this.fault?.('deleteMarkerWrite', handle, ''); await handle.writeFile(JSON.stringify(marker), 'utf8'); }
+        finally { await handle.close(); }
+      }
+      // A retry explicitly verifies marker durability before deleting any content.
+      const handle = await open(markerFile, 'r+');
+      try { await this.fault?.('deleteMarkerSync', handle, ''); await handle.sync(); }
+      finally { await handle.close(); await this.fault?.('deleteMarkerClose', handle, ''); }
+      this.latest.delete(id); this.blocked.delete(id);
+      for (const name of this.deletionFiles(id, await readdir(this.directory))) {
+        const file = path.resolve(this.directory, name);
+        if (path.dirname(file) !== path.resolve(this.directory)) throw new AppError('INVALID_STATE', 'Deletion path escaped the history directory.');
+        const info = await lstat(file);
+        if (!info.isFile() || info.isSymbolicLink()) throw new AppError('INVALID_STATE', 'Refusing to delete a non-regular history file.');
+        await this.fault?.('deleteFile', handle, name);
+        await unlink(file);
+      }
+      return { id, deleted: true as const, expectedSequence: marker.expectedSequence };
+    });
+  }
   private file(id: string, extension: string): string {
     return path.join(this.directory, `${idSchema.parse(id)}.${extension}`);
   }
@@ -27,6 +101,7 @@ export class DiscussionStore<T extends JournalDiscussion = Discussion> {
     return withJournalLock(this.file(state.id, 'jsonl'), () => this.commitLocked(state, event));
   }
   private async commitLocked(state: T, event: RunEvent): Promise<void> {
+    await this.assertAvailable(state.id);
     if (this.blocked.has(state.id)) throw new AppError('STORAGE_UNCONFIRMED', 'Journal storage is unconfirmed; explicit recovery is required.');
     // Cache and pending digests use the same JSON representation as durable replay (including omission of optional undefined keys).
     const validated = recordSchema.safeParse(JSON.parse(JSON.stringify({ state, event })));
@@ -75,12 +150,14 @@ export class DiscussionStore<T extends JournalDiscussion = Discussion> {
     this.latest.set(state.id, this.typed(record.state));
   }
   async records(id: string): Promise<{ event: RunEvent; state: T }[]> {
+    await this.assertAvailable(id);
     return decode(await readFile(this.file(id, 'jsonl'), 'utf8'), id, this.blocked.has(id)).map(r => ({ ...r, state: this.typed(r.state) }));
   }
   async recover(id: string, repairTail = false): Promise<{ state: T | null; outcome: 'adopted' | 'not-committed' | 'verified'; backup: string | null }> {
     return withJournalLock(this.file(id, 'jsonl'), () => this.recoverLocked(id, repairTail));
   }
   private async recoverLocked(id: string, repairTail: boolean): Promise<{ state: T | null; outcome: 'adopted' | 'not-committed' | 'verified'; backup: string | null }> {
+    await this.assertAvailable(id);
     this.latest.delete(id);
     const journal = this.file(id, 'jsonl');
     const text = await readFile(journal, 'utf8');
@@ -137,6 +214,7 @@ export class DiscussionStore<T extends JournalDiscussion = Discussion> {
     return withJournalLock(this.file(id, 'jsonl'), () => this.compactLocked(id));
   }
   private async compactLocked(id: string): Promise<{ before: number; after: number; backup: string | null }> {
+    await this.assertAvailable(id);
     if (this.blocked.has(id)) throw new AppError('STORAGE_UNCONFIRMED', 'Recover storage before offline compaction.');
     const journal = this.file(id, 'jsonl'), original = await readFile(journal, 'utf8');
     const records = decode(original, id);
@@ -159,9 +237,11 @@ export class DiscussionStore<T extends JournalDiscussion = Discussion> {
   }
   async list(): Promise<T[]> {
     await mkdir(this.directory, { recursive: true });
+    await this.deletionIssues();
     const files = (await readdir(this.directory)).filter(file => file.endsWith('.jsonl') && idSchema.safeParse(file.slice(0, -6)).success);
     const states = await Promise.all(files.map(async file => {
       const id = file.slice(0, -6);
+      if (this.deleted.has(id)) return undefined;
       try {
         const text = await readFile(this.file(id, 'jsonl'), 'utf8');
         // Startup verifies durable readable journals without scheduling or repairing anything.
@@ -189,5 +269,7 @@ type PendingCommit = z.infer<typeof pendingSchema>;
 // not insertion order; retain legacy digest checks for preexisting failure metadata.
 const digest = (record: StoredRecord, canonical = false) => createHash('sha256').update(JSON.stringify(record, canonical ? (_key, value: unknown) =>
   value && typeof value === 'object' && !Array.isArray(value) ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)) : value : undefined)).digest('hex');
-export type StorageStage = 'beforeAppend' | 'afterAppend' | 'sync' | 'close' | 'recoverySync' | 'recoveryClose';
+const missing = (error: unknown) => error instanceof Error && 'code' in error && error.code === 'ENOENT';
+const deletionSchema = z.object({ version: z.literal(1), id: z.uuid(), operationId: z.uuid(), expectedSequence: z.number().int().positive(), deletedAt: z.iso.datetime() }).strict();
+export type StorageStage = 'beforeAppend' | 'afterAppend' | 'sync' | 'close' | 'recoverySync' | 'recoveryClose' | 'deleteMarkerWrite' | 'deleteMarkerSync' | 'deleteMarkerClose' | 'deleteFile';
 export type StorageFault = (stage: StorageStage, handle: FileHandle, payload: string) => Promise<void>;

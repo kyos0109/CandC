@@ -1,3 +1,4 @@
+import { assertEditable, changeManagement, matchesIndex, summaryOf, type ManagementAction } from './management.js';
 import { PerformanceStore, performanceReport, performanceMarkdown, type Measurement, type PerformanceObserver, type PerformanceRecord } from './performance.js';
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
@@ -108,6 +109,31 @@ export class DiscussionController {
     return runtime ? 'protocol-error' : 'failed';
   }
 
+
+  isDeleted(id: string) { return this.store.isDeleted(id); }
+  summaries(q = '', before?: string) { return [...this.states.values()].filter(s => !this.store.isDeleted(s.id) && matchesIndex(s, q, before)).map(s => summaryOf(s, this.runtimes.has(s.id))); }
+  deletionIssues() { return this.store.deletionIssues(); }
+  async manage(id: string, action: ManagementAction, operationId: string, expectedSequence: number) {
+    return this.exclusive(async () => {
+      const state = this.get(id); this.assertStorage(id);
+      if (this.runtimes.has(id) || state.activity !== null || state.status === 'running') throw new AppError('BUSY', 'Wait for execution and cancellation cleanup before managing the discussion.');
+      const management = changeManagement(state, action, operationId, expectedSequence);
+      if (management) await this.commit({ ...state, management }, 'state', { managementAction: action });
+      return this.get(id);
+    });
+  }
+  async permanentDelete(id: string, operationId: string, expectedSequence: number) {
+    return this.exclusive(async () => {
+      if (this.runtimes.has(id)) throw new AppError('BUSY', 'Wait for cancellation cleanup before deleting the discussion.');
+      if (!this.store.isDeleted(id)) { const state = this.get(id); this.assertStorage(id);
+        if (state.activity !== null || state.status === 'running') throw new AppError('BUSY', 'Wait for an idle discussion.'); }
+      try { return await this.store.permanentDelete(id, operationId, expectedSequence); }
+      finally { if (this.store.isDeleted(id)) {
+        for (const listener of this.listeners.get(id) ?? []) { try { listener({ sequence: 0, discussionId: id, type: 'progress', at: new Date().toISOString(), data: { deleted: true } }); } catch { /* Disconnected client. */ } }
+        this.listeners.delete(id); this.states.delete(id); this.storageBlocked.delete(id);
+      } }
+    });
+  }
   storageIssues() { return this.store.storageIssues(); }
   async recover(id: string, repairTail = false): Promise<Discussion> {
     return this.exclusive(async () => {
@@ -125,6 +151,7 @@ export class DiscussionController {
   }
 
   get(id: string): Discussion {
+    if (this.store.isDeleted(id)) throw new AppError('DISCUSSION_DELETED', 'Discussion was permanently deleted.', 410);
     const state = this.states.get(id);
     if (!state) throw new AppError('NOT_FOUND', 'Discussion not found.', 404);
     return structuredClone(state);
@@ -133,6 +160,7 @@ export class DiscussionController {
 
   async create(id: string, input: DiscussionInput): Promise<Discussion> {
     return this.exclusive(async () => {
+      await this.store.assertAvailable(id);
       const parsed = discussionInputSchema.parse(input);
       parsed.roots = await validateRoots(parsed.roots);
       parsed.roles = { codex: redact(parsed.roles.codex), claude: redact(parsed.roles.claude) };
@@ -173,6 +201,7 @@ export class DiscussionController {
     const accepted = this.performance.captureTime();
     let measurement: Measurement | undefined;
     try { return await this.exclusive(async () => {
+      assertEditable(this.get(id));
       let state = this.get(id);
       this.assertStorage(id);
       const fingerprint = JSON.stringify({ action: 'start', purpose });
@@ -216,6 +245,7 @@ export class DiscussionController {
 
   async rename(id: string, displayName: string, expectedVersion: number): Promise<Discussion> {
     return this.exclusive(async () => {
+      assertEditable(this.get(id));
       const state = this.get(id);
       this.assertStorage(id);
       if (this.runtimes.has(id)) throw new AppError('BUSY', 'Pause before renaming the discussion.');
@@ -230,6 +260,7 @@ export class DiscussionController {
   async configure(id: string, settings: { mode?: Discussion['mode'] | undefined; flow?: Discussion['flow'] | undefined; roles?: Discussion['roles'] | undefined; limits?: Discussion['limits'] | undefined;
     topic?: string | undefined; goal?: string | undefined; constraints?: string | undefined; focused?: boolean | undefined; expectedVersion?: number | undefined }): Promise<Discussion> {
     return this.exclusive(async () => {
+      assertEditable(this.get(id));
       const state = this.get(id);
       if (state.behaviorVersion === 2 && settings.expectedVersion !== state.v2!.configurationVersion) throw new AppError('VERSION_CONFLICT', 'Settings changed; refresh before updating.');
       if (settings.roles && this.runtimes.has(id)) throw new AppError('BUSY', '請先暫停再修改立場。');
@@ -254,6 +285,7 @@ export class DiscussionController {
   }
 
   async fork(id: string, newId: string): Promise<Discussion> {
+    assertEditable(this.get(id));
     this.assertStorage(id);
     if (this.states.has(newId)) throw new AppError('IDEMPOTENCY_CONFLICT', 'The new discussion ID is already in use.');
     if (this.runtimes.has(id)) throw new AppError('BUSY', '請先停止或暫停原討論。');
@@ -273,6 +305,7 @@ export class DiscussionController {
 
   async pause(id: string): Promise<Discussion> {
     return this.exclusive(async () => {
+      assertEditable(this.get(id));
       const state = this.get(id);
       this.assertStorage(id);
       if (state.status === 'stopped' || state.status === 'indeterminate') return state;
@@ -286,6 +319,7 @@ export class DiscussionController {
 
   async stop(id: string): Promise<Discussion> {
     return this.exclusive(async () => {
+      assertEditable(this.get(id));
       const state = this.get(id);
       // Persist intent before cancellation, so a crash cannot resurrect a stopped discussion.
       await this.commit({ ...state, status: 'stopped', pauseReason: 'Stopped by user.' }, 'state', { status: 'stopped' });
@@ -296,6 +330,7 @@ export class DiscussionController {
 
   async send(id: string, messageId: string, text: string, recipient: AgentId | 'both', inReplyTo: string | null = null): Promise<Discussion> {
     return this.exclusive(async () => {
+      assertEditable(this.get(id));
       const state = this.get(id);
       const sanitized = redact(text);
       const existing = state.messages.find((message) => message.id === messageId);
@@ -330,6 +365,7 @@ export class DiscussionController {
 
   async rebuild(id: string, operationId: string, expectedVersion: number): Promise<Discussion> {
     return this.exclusive(async () => {
+      assertEditable(this.get(id));
       this.assertStorage(id);
       const state = this.get(id);
       const fingerprint = JSON.stringify({ action: 'rebuild', expectedVersion });
@@ -348,6 +384,7 @@ export class DiscussionController {
     });
   }
   async upgrade(id: string, newId: string): Promise<Discussion> {
+    assertEditable(this.get(id));
     this.assertStorage(id);
     const previous = this.get(id);
     if (previous.behaviorVersion !== 1) throw new AppError('INVALID_STATE', 'Only legacy discussions need upgrading.');
@@ -373,6 +410,7 @@ export class DiscussionController {
   }
   async issueAction(id: string, operationId: string, expectedVersion: number, action: 'add' | 'select' | 'skip' | 'dispose', issueId?: string, title?: string): Promise<Discussion> {
     return this.exclusive(async () => {
+      assertEditable(this.get(id));
       const state = this.get(id);
       const fingerprint = JSON.stringify({ action, expectedVersion, issueId, title: title === undefined ? undefined : redact(title) });
       if (state.operationIds.includes(operationId)) {

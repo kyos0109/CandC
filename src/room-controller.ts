@@ -1,3 +1,4 @@
+import { assertEditable, changeManagement, matchesIndex, summaryOf, type ManagementAction } from './management.js';
 import { randomUUID, createHash } from 'node:crypto';
 import path from 'node:path';
 import { mkdir } from 'node:fs/promises';
@@ -36,9 +37,34 @@ export class RoomController {
     const result = this.lock.then(action); this.lock = result.catch(() => undefined); return result;
   }
   has(id: string) { return this.states.has(id); }
-  get(id: string): RoomDiscussion { const s = this.states.get(id); if (!s) throw new AppError('NOT_FOUND', 'Discussion not found.', 404); return structuredClone(s); }
+  get(id: string): RoomDiscussion { if (this.store.isDeleted(id)) throw new AppError('DISCUSSION_DELETED', 'Discussion was permanently deleted.', 410); const s = this.states.get(id); if (!s) throw new AppError('NOT_FOUND', 'Discussion not found.', 404); return structuredClone(s); }
   list() { return [...this.states.values()].map(s => structuredClone(s)); }
   get busy() { return this.runtimes.size > 0; }
+
+  isDeleted(id: string) { return this.store.isDeleted(id); }
+  summaries(q = '', before?: string) { return [...this.states.values()].filter(s => !this.store.isDeleted(s.id) && matchesIndex(s, q, before)).map(s => summaryOf(s, this.runtimes.has(s.id))); }
+  deletionIssues() { return this.store.deletionIssues(); }
+  async manage(id: string, action: ManagementAction, operationId: string, expectedSequence: number) {
+    return this.exclusive(async () => {
+      const state = this.get(id); this.assertStorage(id);
+      if (this.runtimes.has(id) || state.activity !== null || state.status === 'running') throw new AppError('BUSY', 'Wait for execution and cancellation cleanup before managing the discussion.');
+      const management = changeManagement(state, action, operationId, expectedSequence);
+      if (management) await this.commit({ ...state, management }, 'state', { managementAction: action });
+      return this.get(id);
+    });
+  }
+  async permanentDelete(id: string, operationId: string, expectedSequence: number) {
+    return this.exclusive(async () => {
+      if (this.runtimes.has(id)) throw new AppError('BUSY', 'Wait for cancellation cleanup before deleting the discussion.');
+      if (!this.store.isDeleted(id)) { const state = this.get(id); this.assertStorage(id);
+        if (state.activity !== null || state.status === 'running') throw new AppError('BUSY', 'Wait for an idle discussion.'); }
+      try { return await this.store.permanentDelete(id, operationId, expectedSequence); }
+      finally { if (this.store.isDeleted(id)) {
+        for (const listener of this.listeners.get(id) ?? []) { try { listener({ sequence: 0, discussionId: id, type: 'progress', at: new Date().toISOString(), data: { deleted: true } }); } catch { /* Disconnected client. */ } }
+        this.listeners.delete(id); this.states.delete(id); this.reloadedFakeRooms.delete(id);
+      } }
+    });
+  }
   storageIssues() { return this.store.storageIssues(); }
   private assertStorage(id: string) { if (this.store.isBlocked(id)) throw new AppError('STORAGE_UNCONFIRMED', 'Storage is unconfirmed; recover before scheduling.'); }
   private progress(id: string, data: Record<string, unknown>) { this.emit(id, { sequence: 0, discussionId: id, type: 'progress', at: new Date().toISOString(), data }); }
@@ -72,6 +98,7 @@ export class RoomController {
   }
   async create(id: string, input: RoomInput, history?: InitialRoomHistory) {
     return this.exclusive(async () => {
+      await this.store.assertAvailable(id);
       const parsed = roomInputSchema.parse(input);
       const normalized: RoomInput = { ...parsed, topic: redact(parsed.topic), goal: redact(parsed.goal.trim() || parsed.topic), constraints: redact(parsed.constraints),
         participants: parsed.participants.map(p => ({ ...p, instructions: redact(p.instructions) })), roots: await validateRoots(parsed.roots),
@@ -95,6 +122,7 @@ export class RoomController {
     const accepted = this.performance.captureTime(), executionId = randomUUID();
     let measurement: Measurement | undefined;
     try { return await this.exclusive(async () => {
+      assertEditable(this.get(id));
       const state = this.get(id); this.assertStorage(id);
       if (purpose === 'roles') throw new AppError('INVALID_STATE', 'Version 3 uses explicit participant positions.');
       const fingerprint = JSON.stringify({ action: 'start', purpose });
@@ -598,6 +626,7 @@ export class RoomController {
   }
   async pause(id: string) {
     return this.exclusive(async () => {
+      assertEditable(this.get(id));
       const state = this.get(id);
       this.assertStorage(id);
       if (state.status === 'stopped' || state.status === 'indeterminate') return state;
@@ -608,9 +637,11 @@ export class RoomController {
       return this.get(id);
     });
   }
-  async stop(id: string) { return this.exclusive(async () => { const s = this.get(id); await this.commit({ ...s, status: 'stopped', pauseReason: 'Stopped by user.', room: { ...s.room, grant: null, currentSpeaker: null } }); this.runtimes.get(id)?.abort.abort(); return this.get(id); }); }
+  async stop(id: string) { return this.exclusive(async () => {
+      assertEditable(this.get(id)); const s = this.get(id); await this.commit({ ...s, status: 'stopped', pauseReason: 'Stopped by user.', room: { ...s.room, grant: null, currentSpeaker: null } }); this.runtimes.get(id)?.abort.abort(); return this.get(id); }); }
   async send(id: string, messageId: string, text: string, recipient: ParticipantId | 'all', inReplyTo: string | null = null) {
     return this.exclusive(async () => {
+      assertEditable(this.get(id));
       const s = this.get(id); const normalized = redact(text); const old = s.messages.find(m => m.id === messageId);
       if (old) { if (old.sender !== 'user' || old.text !== normalized || old.recipient !== recipient || old.inReplyTo !== inReplyTo) throw new AppError('IDEMPOTENCY_CONFLICT', 'Message ID already used.'); return s; }
       if (s.status === 'stopped' || s.status === 'indeterminate') throw new AppError('INVALID_STATE', 'Rebuild before adding input.');
@@ -624,6 +655,7 @@ export class RoomController {
   async configure(id: string, patch: { mode?: RoomInput['mode'] | undefined; flow?: RoomInput['flow'] | undefined; limits?: Omit<RoomInput['limits'], 'maxModeratorCalls'> & { maxModeratorCalls?: number | undefined } | undefined; topic?: string | undefined; goal?: string | undefined; constraints?: string | undefined; expectedVersion?: number | undefined; confirmRoles?: boolean | undefined;
     research?: boolean | undefined; roots?: string[] | undefined; discussionPolicyVersion?: 1 | undefined; moderatorMode?: RoomInput['moderatorMode'] | undefined }) {
     return this.exclusive(async () => {
+      assertEditable(this.get(id));
       const s = this.get(id); if (this.busy) throw new AppError('BUSY', 'Pause before changing settings.');
       if (patch.expectedVersion !== s.room.configurationVersion) throw new AppError('VERSION_CONFLICT', 'Refresh before changing settings.');
       if (patch.moderatorMode && !s.moderator) throw new AppError('INVALID_STATE', 'Moderator mode requires a moderator.');
@@ -652,12 +684,14 @@ export class RoomController {
     });
   }
   async rename(id: string, displayName: string, expectedVersion: number) {
-    return this.exclusive(async () => { const s = this.get(id); if (this.busy) throw new AppError('BUSY', 'Pause before renaming.');
+    return this.exclusive(async () => {
+      assertEditable(this.get(id)); const s = this.get(id); if (this.busy) throw new AppError('BUSY', 'Pause before renaming.');
       if ((s.displayVersion ?? 0) !== expectedVersion) throw new AppError('VERSION_CONFLICT', 'Display version changed.');
       await this.commit({ ...s, displayName: redact(displayName.trim()), displayVersion: expectedVersion + 1 }); return this.get(id); });
   }
   async rebuild(id: string, operationId: string, expectedVersion: number) {
-    return this.exclusive(async () => { const s = this.get(id); this.assertStorage(id); if (this.busy) throw new AppError('BUSY', 'Wait for owned processes to close.');
+    return this.exclusive(async () => {
+      assertEditable(this.get(id)); const s = this.get(id); this.assertStorage(id); if (this.busy) throw new AppError('BUSY', 'Wait for owned processes to close.');
       const fingerprint = JSON.stringify({ action: 'rebuild', expectedVersion }); if (this.repeated(s, operationId, fingerprint)) return s;
       if (s.room.taskVersion !== expectedVersion) throw new AppError('VERSION_CONFLICT', 'Task version changed.');
       // Overlapping prepared calls reserve their union duration, rather than summing concurrent time twice.
@@ -671,7 +705,8 @@ export class RoomController {
     const recovered = await this.store.recover(id, repairTail); if (!recovered.state) throw new AppError('RECOVERY_UNAVAILABLE', 'No confirmed history.'); this.states.set(id, recovered.state);
     await this.commit({ ...recovered.state, status: 'indeterminate', activity: null, room: { ...recovered.state.room, sessions: {}, grant: null, currentSpeaker: null }, pauseReason: 'Storage verified. Explicit session reconstruction is required before continuing.' }, 'recovered'); return this.get(id); }); }
   async resolveTopic(id: string, operationId: string, expectedVersion: number, apply: boolean) {
-    return this.exclusive(async () => { const s = this.get(id); if (this.busy) throw new AppError('BUSY', 'Wait for an idle boundary.');
+    return this.exclusive(async () => {
+      assertEditable(this.get(id)); const s = this.get(id); if (this.busy) throw new AppError('BUSY', 'Wait for an idle boundary.');
       const fingerprint = JSON.stringify({ action: 'resolve-topic', expectedVersion, apply }); if (this.repeated(s, operationId, fingerprint)) return s;
       if (s.room.taskVersion !== expectedVersion || !s.room.pendingTopic) throw new AppError('VERSION_CONFLICT', 'Pending topic changed.');
       const pending = s.room.pendingTopic;

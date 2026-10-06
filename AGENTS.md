@@ -26,6 +26,7 @@ have the live path. Gemini/Grok live execution remains locked.
 | Legacy version 1/2 execution | `src/controller.ts`, `src/focused-execution.ts`, `src/focused.ts`, `src/v2-contract.ts` | `docs/FOCUSED_CONTRACT.md` |
 | Admission, ownership and upgrades | `src/discussion-service.ts`, `tests/oss-regressions.test.ts` | Relevant version contract |
 | Journals and recovery | `src/store.ts`, `src/journal-codec.ts`, `src/journal-lock.ts`, storage/recovery tests | Relevant version contract |
+| Conversation folders and permanent deletion | `src/management.ts`, `src/discussion-service.ts`, `src/store.ts`, `web/History.tsx` | `docs/DISCUSSION_MANAGEMENT.md` |
 | HTTP and SSE | `src/server.ts`, `src/event-stream.ts`, `tests/server.test.ts` | `SECURITY.md` |
 | CLI protocols and research | `src/adapters/`, `src/environment.ts`, `src/research.ts`, `src/mcp.ts` | `SECURITY.md`; generated types only when the protocol changes |
 | Interface and locales | `web/App.tsx`, affected view, `web/i18n.ts`, `web/locales/en.ts` | `docs/UI_UX_SPEC.md` |

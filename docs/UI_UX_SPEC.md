@@ -79,6 +79,23 @@ handoffs are retained in Git history, not active development instructions.
   recipients and settings without translating saved user/model/evidence content or
   invoking a provider.
 
+## Conversation management
+
+- History has Active, Archived and Trash folders, counts, full-topic/name search,
+  date filtering in management mode and pages of 50 summaries. Select a conversation
+  to fetch its complete content; running subscriptions survive changing folders/pages.
+- Row menus and page selection support archive/unarchive/trash/restore and batch
+  actions. Archive and trash have undo; failed items remain selected. Managing the
+  selected conversation requires confirming discard of an unsent draft.
+- Archived/trash details are read-only with reading, diagnostics and full export.
+  Restore explicitly before editing or continuing; restore never starts an AI call.
+- Permanent delete/empty trash require a dialog listing the exact reviewed items,
+  export links and retained external data. Incomplete deletions remain visible for
+  explicit retry, with unconfirmed markers preserved for inspection.
+
+Persistence, API and deletion boundaries belong to
+[DISCUSSION_MANAGEMENT.md](DISCUSSION_MANAGEMENT.md).
+
 ## Verify affected interactions
 
 Use fake-provider browser tests and an isolated build. Check affected desktop/mobile

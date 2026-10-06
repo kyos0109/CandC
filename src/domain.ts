@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { focusedStateSchema, type FocusedState } from './v2-contract.js';
+import { managementSchema, type Management } from './management-contract.js';
 
 export const agentIdSchema = z.enum(['codex', 'claude']);
 export type AgentId = z.infer<typeof agentIdSchema>;
@@ -34,6 +35,7 @@ export type Message = z.infer<typeof messageSchema>;
 export type AgentSession = { id: string; model: string; backend: 'fake' | 'live' };
 export type DiscussionStatus = 'ready' | 'running' | 'paused' | 'stopped' | 'indeterminate';
 export type Discussion = DiscussionInput & {
+  management?: Management | undefined;
   displayVersion?: number | undefined;
   id: string;
   backend: 'fake' | 'live';
@@ -77,6 +79,7 @@ const messageSchema = z.object({
   responseRefs: z.array(z.uuid()).optional(), annotation: z.enum(['valid', 'invalid', 'unmarked']).optional(),
 });
 const stateSchema = discussionInputSchema.extend({
+  management: managementSchema.optional(),
   displayVersion: z.number().int().nonnegative().optional(),
   behaviorVersion: z.union([z.literal(1), z.literal(2)]).default(1),
   flow: z.enum(['alternating', 'free']).default('alternating'),

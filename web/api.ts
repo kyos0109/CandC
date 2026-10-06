@@ -2,10 +2,14 @@ import { translate } from './i18n.js';
 import type { Discussion } from '../src/domain.js';
 import type { EnvironmentStatus } from '../src/environment.js';
 import type { RoomDiscussion } from '../src/room-contract.js';
+import type { DiscussionService } from '../src/discussion-service.js';
+export type DiscussionIndex = Awaited<ReturnType<DiscussionService['index']>>;
 export type { Discussion, EnvironmentStatus };
 export type AnyDiscussion = Discussion | RoomDiscussion;
 export type Models = { codex: { id: string; label: string; efforts: string[] }[]; claude: string[]; gemini?: string[]; grok?: string[]; error: string | null };
 const errors: Record<string, string> = {
+  get DISCUSSION_READ_ONLY() { return translate("此對話唯讀，請先還原到一般分類。"); },
+  get DISCUSSION_DELETED() { return translate("此對話已永久刪除。"); },
   get BUSY() { return translate("已有討論正在執行，請先暫停它。"); }, get LOGIN_REQUIRED() { return translate("請先完成兩個 CLI 登入，再重新檢查。"); },
   get ROUND_LIMIT() { return translate("已達輪次上限，請調整上限後續談。"); }, get TIME_LIMIT() { return translate("已達時間上限，請調整上限後續談。"); },
   get INVALID_INPUT() { return translate("輸入格式不符合要求，請檢查題目、模型與上限。"); }, get INVALID_ROOT() { return translate("目錄必須是可讀取的特定本機資料夾。"); },

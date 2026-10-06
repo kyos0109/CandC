@@ -6,6 +6,7 @@ import { AppError, agentIdSchema, discussionInputSchema } from './domain.js';
 import { DiscussionController } from './controller.js';
 import { DiscussionService } from './discussion-service.js';
 import { participantSchema, roomInputSchema } from './room-contract.js';
+import { indexQuerySchema, managementActionSchema } from './management.js';
 import { safeError } from './redaction.js';
 import fastifyStatic from '@fastify/static';
 import { stat } from 'node:fs/promises';
@@ -62,6 +63,26 @@ export function createServer(controller: DiscussionController | DiscussionServic
     });
   }
   server.get('/api/discussions', async () => controller.list());
+  server.get('/api/discussion-index', async request => {
+    const query = indexQuerySchema.parse(request.query);
+    if (controller instanceof DiscussionService) return controller.index(query);
+    const all = controller.summaries(), counts = { active: 0, archived: 0, trash: 0 }; for (const s of all) counts[s.folder]++;
+    const filtered = controller.summaries(query.q, query.before).filter(s => s.folder === query.folder)
+      .sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt) || a.id.localeCompare(b.id));
+    const page = Math.min(query.page, Math.max(1, Math.ceil(filtered.length / query.limit)));
+    return { items: filtered.slice((page - 1) * query.limit, page * query.limit), total: filtered.length, page, limit: query.limit, counts,
+      runningIds: all.filter(s => s.runtime || s.status === 'running').map(s => s.id), pendingDeletions: await controller.deletionIssues() };
+  });
+  server.post('/api/discussions/:id/management', async request => {
+    const { id } = idParams.parse(request.params);
+    const body = z.object({ action: managementActionSchema, operationId: z.uuid(), expectedSequence: z.number().int().positive() }).strict().parse(request.body);
+    return controller.manage(id, body.action, body.operationId, body.expectedSequence);
+  });
+  server.delete('/api/discussions/:id', async request => {
+    const { id } = idParams.parse(request.params);
+    const body = z.object({ operationId: z.uuid(), expectedSequence: z.number().int().positive() }).strict().parse(request.body);
+    return controller.permanentDelete(id, body.operationId, body.expectedSequence);
+  });
   server.get('/api/discussions/:id/performance', async request => controller.performanceView(idParams.parse(request.params).id));
   server.get('/api/performance/report', async (request, reply) => {
     const { format } = z.object({ format: z.enum(['json', 'markdown']).default('json') }).strict().parse(request.query);

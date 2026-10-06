@@ -1,0 +1,23 @@
+.history-folders{display:flex;gap:3px;margin-top:8px}
+.history-folders button{flex:1;min-width:0;gap:4px;padding:6px 3px;font-size:12px;background:transparent;border-color:transparent}
+.history-folders button[aria-pressed=true]{background:var(--accent-soft);border-color:var(--accent-line);color:var(--accent-strong)}
+.history-folders small{font-size:10px}
+.history-tools{display:flex;flex-wrap:wrap;gap:4px;margin:5px 0}
+.history-tools button{min-height:30px;padding:4px 7px;font-size:12px}
+.history-bulk{display:grid;gap:5px;padding:8px;border:1px solid var(--line);border-radius:var(--radius-md);font-size:12px}
+.history-bulk label{display:flex;align-items:center;gap:5px}
+.history-date{flex-wrap:wrap}
+.history-date input{width:100%;min-width:0;padding:4px;font-size:12px}
+.history-row{position:relative;display:flex;align-items:center;min-width:0;flex-wrap:wrap}
+.history-row>.history-item{flex:1;min-width:0}
+.history-row>input{flex:none;margin:0 3px;width:16px;height:16px}
+.history-menu-toggle{flex:none;width:25px;min-width:25px;min-height:30px;padding:0}
+.history-menu{width:100%;display:flex;flex-wrap:wrap;gap:4px;padding:4px 8px 8px}
+.history-menu button{font-size:12px;min-height:30px;padding:4px 8px}
+.history-pagination{display:flex;align-items:center;justify-content:space-between;padding:5px;font-size:12px}
+.history-pagination button{min-width:30px;min-height:30px;padding:4px}
+.deletion-targets{padding-left:20px;overflow-wrap:anywhere}
+.deletion-targets li{margin:8px 0}
+.deletion-targets span{display:block;font-size:12px}
+.danger{color:var(--danger);border-color:var(--danger)}
+.management-settings{margin:0;padding:0;border:0;min-width:0}

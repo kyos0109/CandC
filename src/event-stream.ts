@@ -18,6 +18,7 @@ export function registerEventStream(server: FastifyInstance, controller: Discuss
     controller.get(id);
     // Subscribe before reading the journal; sequence filtering prevents replay/live overlap duplicates.
     let replaying = true;
+    let deleted = false;
     let pumping = false;
     let pendingBytes = 0;
     const pending: import('./domain.js').RunEvent[] = [];
@@ -53,6 +54,10 @@ export function registerEventStream(server: FastifyInstance, controller: Discuss
       finally { pumping = false; }
     };
     const unsubscribe = controller.subscribe(id, event => {
+      if (event.type === 'progress' && event.data.deleted) {
+        deleted = true; clearTimeout(disconnectTimers.get(id)); disconnectTimers.delete(id);
+        if (replaying) reply.raw.destroy(); else reply.raw.end(); return;
+      }
       if (reply.raw.destroyed || reply.raw.writableEnded) return;
       pendingBytes += Buffer.byteLength(JSON.stringify(event));
       // Bound concurrent live updates, not the total persisted history being replayed.
@@ -84,11 +89,13 @@ export function registerEventStream(server: FastifyInstance, controller: Discuss
       pendingBytes = 0;
       responses.delete(reply.raw);
       const count = (subscribers.get(id) ?? 1) - 1;
-      subscribers.set(id, count);
+      if (count > 0) subscribers.set(id, count); else subscribers.delete(id);
+      if (deleted) return;
       if (count === 0) {
         const timer = setTimeout(() => {
           disconnectTimers.delete(id);
-          if (controller.get(id).status === 'running') void controller.pause(id).catch(() => undefined);
+          try { if (controller.get(id).status === 'running') void controller.pause(id).catch(() => undefined); }
+          catch { /* A deleted discussion has no runtime to pause. */ }
         }, options.disconnectGraceMs ?? 15_000);
         timer.unref();
         disconnectTimers.set(id, timer);

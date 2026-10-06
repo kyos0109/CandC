@@ -5,6 +5,7 @@ import './styles/tokens.css';
 import './styles/base.css';
 import './styles/components.css';
 import './styles/shell.css';
+import './styles/history.css';
 import './styles/conversation.css';
 import './styles/new-discussion.css';
 import './styles/seats.css';

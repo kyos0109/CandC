@@ -19,7 +19,7 @@ async function createRoom(page: Page, template: string, topic: string) {
 async function show(page: Page, state: any) {
   const first = state.messages.find((m: any) => m.sender === 'codex' && m.purpose === 'discussion');
   const shown = { ...state, messages: state.messages.map((m: any) => m === first ? { ...m, text: LONG } : m) };
-  await page.route('**/api/discussions', route => route.fulfill({ json: [shown] }));
+  await page.route('**/api/discussions/' + shown.id, route => route.fulfill({ json: shown }));
   await page.reload();
   await expect(page.locator('.message.prov-codex').first()).toBeVisible();
 }
@@ -82,7 +82,7 @@ test('every provider and the moderator get a different bubble colour, and the mo
 // Shows the saved room with a speaking grant, as the scheduler stores it: the whole task text the seat is given.
 async function showGrant(page: Page, state: any, target: string, task: string) {
   const shown = { ...state, room: { ...state.room, grant: { id: crypto.randomUUID(), target, task, version: state.room.taskVersion } } };
-  await page.route('**/api/discussions', route => route.fulfill({ json: [shown] }));
+  await page.route('**/api/discussions/' + shown.id, route => route.fulfill({ json: shown }));
   await page.reload();
   await expect(page.locator('.stage-grant')).toBeVisible();
 }

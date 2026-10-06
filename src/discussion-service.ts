@@ -3,6 +3,7 @@ import { DiscussionController } from './controller.js';
 import { RoomController, type InitialRoomHistory } from './room-controller.js';
 import { AppError, type Discussion, type DiscussionInput, type AgentId, type RunEvent } from './domain.js';
 import type { ParticipantId, RoomDiscussion, RoomInput } from './room-contract.js';
+import { assertEditable, type ManagementAction, type IndexQuery } from './management.js';
 
 export type AnyDiscussion = Discussion | RoomDiscussion;
 export class DiscussionService {
@@ -10,16 +11,36 @@ export class DiscussionService {
   constructor(readonly legacy: DiscussionController, readonly rooms: RoomController) {}
   get performance() { return this.legacy.performance; }
   async initialize() { await this.legacy.initialize(); await this.rooms.initialize(); }
-  get(id: string): AnyDiscussion { return this.rooms.has(id) ? this.rooms.get(id) : this.legacy.get(id); }
+  get(id: string): AnyDiscussion { if (this.rooms.isDeleted(id) || this.legacy.isDeleted(id)) throw new AppError('DISCUSSION_DELETED', 'Discussion was permanently deleted.', 410); return this.rooms.has(id) ? this.rooms.get(id) : this.legacy.get(id); }
   list(): AnyDiscussion[] { return [...this.legacy.list(), ...this.rooms.list()]; }
+  async index(query: IndexQuery) {
+    const all = [...this.legacy.summaries(), ...this.rooms.summaries()];
+    const counts = { active: 0, archived: 0, trash: 0 }; for (const item of all) counts[item.folder]++;
+    const filtered = [...this.legacy.summaries(query.q, query.before), ...this.rooms.summaries(query.q, query.before)]
+      .filter(s => s.folder === query.folder).sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt) || a.id.localeCompare(b.id));
+    const page = Math.min(query.page, Math.max(1, Math.ceil(filtered.length / query.limit)));
+    const pendingDeletions = await this.rooms.deletionIssues();
+    return { items: filtered.slice((page - 1) * query.limit, page * query.limit), total: filtered.length, page, limit: query.limit, counts,
+      runningIds: all.filter(s => s.runtime || s.status === 'running').map(s => s.id), pendingDeletions };
+  }
+  manage(id: string, action: ManagementAction, operationId: string, expectedSequence: number) {
+    return this.admit<AnyDiscussion>(() => this.controller(id).manage(id, action, operationId, expectedSequence));
+  }
+  permanentDelete(id: string, operationId: string, expectedSequence: number) {
+    return this.admit(() => (this.rooms.has(id) || this.rooms.isDeleted(id) ? this.rooms : this.legacy).permanentDelete(id, operationId, expectedSequence));
+  }
   storageIssues() { return [...new Map([...this.legacy.storageIssues(), ...this.rooms.storageIssues()].map(i => [i.id, i])).values()]; }
-  private controller(id: string) { return this.rooms.has(id) ? this.rooms : this.legacy; }
+  private controller(id: string) {
+    if (this.rooms.isDeleted(id) || this.legacy.isDeleted(id)) throw new AppError('DISCUSSION_DELETED', 'Discussion was permanently deleted.', 410);
+    return this.rooms.has(id) ? this.rooms : this.legacy;
+  }
   private admit<T>(action: () => Promise<T>): Promise<T> {
     const result = this.admission.then(action);
     this.admission = result.catch(() => undefined);
     return result;
   }
   private assertDestination(id: string, version: 'legacy' | 'room') {
+    if (this.rooms.isDeleted(id) || this.legacy.isDeleted(id)) throw new AppError('DISCUSSION_DELETED', 'Discussion ID was permanently deleted.', 410);
     if ((version === 'legacy' ? this.rooms.has(id) : this.legacy.has(id))) {
       throw new AppError('IDEMPOTENCY_CONFLICT', 'Discussion ID belongs to another behavior version.');
     }
@@ -80,7 +101,7 @@ export class DiscussionService {
     return this.admit(() => this.upgradeRoomNow(id, newId, moderator));
   }
   private async upgradeRoomNow(id: string, newId: string, moderator: RoomInput['moderator']) {
-    const previous = this.get(id); if (previous.behaviorVersion === 3) throw new AppError('INVALID_STATE', 'Already version 3.');
+    const previous = this.get(id); assertEditable(previous); if (previous.behaviorVersion === 3) throw new AppError('INVALID_STATE', 'Already version 3.');
     if (previous.activity !== null || previous.storage) throw new AppError('BUSY', 'Pause and confirm saved storage before upgrading.');
     if (this.rooms.has(newId)) { const existing = this.rooms.get(newId); if (existing.room.sourceDiscussionId === id) return existing; throw new AppError('IDEMPOTENCY_CONFLICT', 'Destination ID already used.'); }
     const completedIds = new Set(previous.messages.filter(m => m.status === 'completed').map(m => m.id));

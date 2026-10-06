@@ -4,7 +4,8 @@ for (const rejectFirst of [false, true]) test(`session bootstrap and SSE renewal
  const state={id,topic:'Session race fixture',backend:'fake',kind:'discussion',mode:'auto',flow:'free',status:'ready',roles:{codex:'',claude:''},rolesConfirmed:true,activity:null,agents:{codex:{model:'fixture',effort:'medium'},claude:{model:'fixture',effort:'medium'}},messages:[],evidence:[],roots:[],research:false,limits:{maxRounds:50,maxDurationMs:14400000,turnTimeoutMs:600000},elapsedMs:0,createdAt:new Date().toISOString(),completedInRound:[],nextSpeaker:'codex',pauseReason:null};
  await page.addInitScript(id=>localStorage.setItem('candc-discussion',id),id);
  await page.route('**/api/session',async route=>{await new Promise(r=>setTimeout(r,500));sessionReady=true;sessions++;await route.fulfill({json:{}});});
- await page.route('**/api/discussions',route=>route.fulfill({json:[state]}));
+ await page.route('**/api/discussion-index?*',route=>route.fulfill({json:{items:[{...state,folder:'active',lastActivityAt:state.createdAt,participants:[],moderator:false,outcome:null}],total:1,page:1,limit:50,counts:{active:1,archived:0,trash:0},runningIds:state.status==='running'?[id]:[],pendingDeletions:[]}}));
+ await page.route('**/api/discussions/'+id,route=>route.fulfill({json:state}));
  await page.route('**/api/storage-issues',route=>route.fulfill({json:[]}));
  await page.route('**/api/environment',route=>route.fulfill({json:{ready:false,codex:{ready:false},claude:{ready:false}}}));
  await page.route('**/api/models',route=>route.fulfill({json:{codex:[],claude:[],error:null}}));

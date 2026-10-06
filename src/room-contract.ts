@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { managementSchema } from './management-contract.js';
 import { workflowSchema, workReportSchema, type Workflow } from './discussion-policy.js';
 import { deliverySchema, conclusionReviewSchema } from './conclusion.js';
 
@@ -109,6 +110,7 @@ const roomRuntimeSchema = z.object({ taskVersion: z.number().int().positive(), c
   uncertainBudgetMs: z.number().nonnegative(),
 }).strict();
 export const roomStateSchema = roomInputSchema.safeExtend({ id: z.uuid(), sequence: z.number().int().positive(),
+  management: managementSchema.optional(),
   status: z.enum(['ready', 'running', 'paused', 'stopped', 'indeterminate']), round: z.number().int().positive(),
   messages: z.array(roomMessageSchema), createdAt: z.iso.datetime(), elapsedMs: z.number().nonnegative(), pauseReason: z.string().nullable(),
   rolesConfirmed: z.boolean(), activity: z.enum(['discussion', 'summary']).nullable(),

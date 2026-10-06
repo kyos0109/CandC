@@ -121,7 +121,7 @@ test('mobile history drawer focus, reduced motion, and old history without migra
   await page.keyboard.press('Escape'); await expect(page.getByRole('button', { name: '開啟討論紀錄' })).toBeFocused();
   expect(await (await page.request.get('/api/discussions/' + id)).json()).toEqual(before);
   const legacy = { ...before, behaviorVersion: 1, v2: undefined, displayName: undefined, displayVersion: undefined, topic: '舊資料第一行\n原始完整題目' };
-  await page.route('**/api/discussions', async route => route.fulfill({ json: [legacy] }));
+  await page.route('**/api/discussions/' + legacy.id, async route => route.fulfill({ json: legacy }));
   await page.reload(); await expect(page.getByRole('heading', { level: 1 })).toHaveText('舊資料第一行');
   await page.getByRole('button', { name: '查看議題' }).click(); await expect(page.getByRole('button', { name: '升級為新討論' })).toBeVisible();
   await expect(page.getByRole('dialog')).toContainText('原始完整題目'); await capture(page, 'legacy-mobile');
@@ -133,7 +133,7 @@ test('four AI presentation fixture labels roles and aligns speech independently 
   const participant = (name: string, role: string, symbol: string) => ({ model: 'presentation-only', effort: 'fixture', name, role, symbol });
   const base = before.messages[1];
   const fixture = { ...before, displayName: '四個 AI 呈現 fixture · 不支援執行', agents: { ...before.agents, host: participant('主持人', '主持', 'H'), researcher: participant('研究員', '第三 AI', 'R') }, evidence: [{ source: 'fixture://local-source', sha256: 'a'.repeat(64), retrievedAt: before.createdAt, truncated: false, text: 'Synthetic source evidence; presentation only.' }], messages: [before.messages[0], { ...base, id: 'host-event', sender: 'host', presentation: 'process', text: '呈現 fixture：先比較方案，再核對證據。' }, { ...base, id: 'host-speech', sender: 'host', text: '先確認共同限制，實質發言保留相同閱讀欄。' }, ...before.messages.slice(1), { ...base, id: 'research-speech', sender: 'researcher', text: '這是呈現 fixture；沒有新增 provider 或模型呼叫。' }] };
-  await page.route('**/api/discussions', route => route.fulfill({ json: [fixture] }));
+  await page.route('**/api/discussions/' + fixture.id, route => route.fulfill({ json: fixture }));
   await page.reload(); await expect(page.locator('.process-notice')).toHaveCount(1); await expect(page.locator('.message.host')).toHaveCount(1);
   const left = await page.locator('.message:not(.user)').evaluateAll(els => els.map(el => el.getBoundingClientRect().left)); expect(new Set(left).size).toBe(1);
   await page.getByRole('button', { name: '參與者', exact: true }).click(); await expect(page.locator('.participant-list li')).toHaveCount(5); await expect(page.locator('.participant-list')).toContainText('第三 AI');
