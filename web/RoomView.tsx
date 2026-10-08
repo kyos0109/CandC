@@ -48,10 +48,10 @@ export function RoomView({ state, progress, busy, perform, panel, setPanel, hist
     // Other tabs unmount the viewport; its next mount has no prior position.
     if (tab !== 'chat') { followedPosition.current = 0; return; }
     if (!visible) return;
-    const content = [state.messages.length, state.room.commands.length, progress?.preview, outcome?.result, state.status];
+    const content = [state.messages.length, state.room.commands.length, active ? live?.preview : undefined, outcome?.result, state.status];
     const changed = content.some((value, index) => value !== displayedContent.current[index]); displayedContent.current = content;
     if (shouldFollow()) latest(); else if (changed) setNewContent(true);
-  }, [visible, panel, state.messages.length, state.room.commands.length, progress?.preview, outcome?.result, state.status, tab]);
+  }, [visible, panel, state.messages.length, state.room.commands.length, live?.preview, outcome?.result, state.status, tab]);
   // The participants dock is open by default on a wide screen and remembers when the user closes it. It never takes focus.
   useEffect(() => { if (visible && !overlay && panel === null && localStorage.getItem('candc-roster') !== 'closed') { setAutoOpened(true); setPanel('participants'); } }, [state.id, overlay, visible]);
   // The composer grows with its text up to a few lines, like the two-agent view.

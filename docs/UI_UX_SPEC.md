@@ -70,6 +70,7 @@ handoffs are retained in Git history, not active development instructions.
   view cancels the pending resize callback.
   Before following after a content/panel update, both views check the actual position
   against their last followed position, allowing browser clamping after geometry shrinks.
+  Progress that is no longer rendered does not create a new-content notification.
 - Distinguish generating, saved, cancelled, paused, partial and unconfirmed storage.
   A manual pause is not a completed conclusion. Completion uses the reviewed stored
   outcome, retaining dissent, gaps and unknowns; individual prose is not automatic consensus.

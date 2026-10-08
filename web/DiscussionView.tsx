@@ -56,7 +56,8 @@ export function DiscussionView({ state, progress, busy, perform, onFork, reading
   };
   useLayoutEffect(() => {
     if (!visible) return;
-    const content = [state.messages.length, progress?.preview, progress?.characters, state.status];
+    // Inactive previews are not rendered; their arrival/cleanup is not new content.
+    const content = [state.messages.length, state.status === 'running' ? progress?.preview : undefined, state.status === 'running' ? progress?.characters : undefined, state.status];
     const changed = content.some((value, index) => value !== displayedContent.current[index]); displayedContent.current = content;
     if (shouldFollow()) jumpToLatest();
     else if (changed) setNewContent(true);

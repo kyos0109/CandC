@@ -78,6 +78,14 @@ for (const version of [2, 3]) test(`connection navigation preserves v${version} 
 });
 
 for (const version of [2, 3]) test(`connection navigation preserves v${version} scroll following and reading position during background replies`, async ({ page }) => {
+  await page.addInitScript(() => {
+    const sources: EventSource[] = [];
+    (window as unknown as { candcTestSources: EventSource[] }).candcTestSources = sources;
+    const NativeEventSource = window.EventSource;
+    window.EventSource = class extends NativeEventSource {
+      constructor(url: string | URL, options?: EventSourceInit) { super(url, options); sources.push(this); }
+    };
+  });
   const errors = consoleErrors(page); await page.setViewportSize({ width: 1280, height: 900 });
   const topic = `Background scroll v${version} ${crypto.randomUUID()}`;
   let id: string;
@@ -111,8 +119,13 @@ for (const version of [2, 3]) test(`connection navigation preserves v${version} 
     } })).ok()).toBe(true);
     expect((await page.request.post(`/api/discussions/${id}/start`, { data: { operationId: crypto.randomUUID() } })).ok()).toBe(true);
     await expect.poll(async () => (await state()).activity, { timeout: 15000 }).toBeNull();
-    expect((await state()).messages.length).toBeGreaterThan(messageCount + 1);
+    const completed = await state();
+    expect(completed.messages.length).toBeGreaterThan(messageCount + 1);
     await page.getByRole('button', { name: '返回討論', exact: true }).click();
+    // Backend completion precedes the debounced SSE refresh in the browser.
+    await expect(page.locator(`[id="message-${completed.messages.at(-1).id}"]`)).toBeAttached();
+    await expect(page.locator('.status')).toContainText('已暫停');
+    await expect(page.locator('.message.pending')).toHaveCount(0);
   };
   await replyWhileHidden();
   await expect.poll(() => viewport.evaluate(element => element.scrollHeight - element.clientHeight - element.scrollTop)).toBeLessThan(2);
@@ -130,7 +143,20 @@ for (const version of [2, 3]) test(`connection navigation preserves v${version} 
   await page.getByRole('button', { name: '連線與設定', exact: true }).click();
   await page.getByRole('button', { name: '返回討論', exact: true }).click();
   await expect.poll(() => viewport.evaluate(element => element.scrollTop)).toBe(100);
+  const deliverProgress = async (preview: string | null) => {
+    expect(await page.evaluate(async ({ id, preview }) => {
+      const sources = (window as unknown as { candcTestSources: EventSource[] }).candcTestSources.filter(source => source.url.includes(id) && source.readyState !== EventSource.CLOSED);
+      for (const source of sources) source.dispatchEvent(new MessageEvent('progress', { data: JSON.stringify({ data: preview === null ? {} : { preview, characters: preview.length } }) }));
+      await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+      return sources.length;
+    }, { id, preview })).toBeGreaterThan(0);
+  };
+  // Inactive progress is invisible; receiving/clearing it must not advertise
+  // new visible content after the completed response has already been read.
+  await deliverProgress('Preview of an already completed response.');
+  await expect(page.locator('.message.pending')).toHaveCount(0);
   await expect(page.getByRole('button', { name: '有新內容 · 回到最新訊息 ↓' })).toBeHidden();
+  await deliverProgress(null);
   await replyWhileHidden();
   await expect.poll(() => viewport.evaluate(element => element.scrollTop)).toBe(100);
   await expect(page.getByRole('button', { name: '有新內容 · 回到最新訊息 ↓' })).toBeVisible();

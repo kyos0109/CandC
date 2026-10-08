@@ -4,65 +4,31 @@ This is a dated record of observed checks, not a development backlog. Run only
 checks relevant to the current task; see [CONTRIBUTING.md](CONTRIBUTING.md).
 Contracts belong to their owning documents listed in [AGENTS.md](AGENTS.md).
 
-## Viewport remount follow preservation (2026-10-08)
+## Scroll following and publication correction (2026-10-08)
 
-Scope: v0.1.3 completes the position guard by resetting only its geometry baseline
-when v3 tabs unmount the chat viewport. Follow/reading intent remains separate.
-The added diagnostics-to-chat regression expected a bottom distance below 2 but
-received 8960 before this correction. Both background navigation and panel/resize
-races remain covered with unchanged exact reading-position assertions.
+Scope: v0.1.4 addresses scroll-following races observed in native macOS CI and
+requires successful main-branch verification in addition to the release matrix.
+Pre-fix browser regressions reproduced scrollTop 0 changing to 329, scrollTop 100
+changing to 9490, a remounted viewport remaining 8960 pixels from the bottom, and
+an invisible inactive preview incorrectly showing the new-content action.
 
-Local typechecks, seven guard cases, isolated compilation and all four affected
-scrolling browser scenarios passed. The preceding v0.1.2 tree also completed full
-local coverage (598 passed, three platform skips) with the documented 15-second
-test/hook deadlines. The v0.1.3 native runs retain the canonical five-second limits
-and establish the final full coverage, all 83 browser cases and installation checks.
-The publication gate also rejects an empty or malformed checked-out commit identity.
+Both views check the actual position before following, preserving the 80-pixel
+margin and browser clamping. Resize following waits for pending scroll events;
+viewport remounts reset the geometry baseline. Only rendered previews count as
+new content. Tests await browser completion of the stored response, inject inactive
+SSE progress and retain all exact position, following and notification assertions.
 
-## Complete scroll guard and publication gate (2026-10-08)
+Observed locally on the final candidate: typechecks, seven guard unit cases,
+isolated compilation and the four scrolling browser cases repeated three times
+passed. Redacted source/history scans and the explicit public-source export are
+required before push. Workflow actions use pinned official Node.js 24 runtimes.
 
-Scope: v0.1.2 addresses the corresponding v3 race discovered by the v0.1.1
-main-branch macOS run. That branch run moved scrollTop 100 to 9490 even though
-the separate release matrix passed. A deterministic panel update before delivery
-of a scroll event reproduced the same 9490 result locally before this correction.
-
-Both views now check the actual reading position against their last followed
-position before automatic following, preserving the 80-pixel follow margin and
-browser clamping after content/viewport shrinkage. Seven guard unit cases,
-typechecks and isolated compilation passed. The four scrolling browser scenarios
-passed three consecutive rounds, and passed again after sharing the guard and
-adding boundary coverage. Repeated browser fixtures now use unique topics.
-
-Publication now also requires successful main-branch verification for the exact
-checked-out tag commit, including manually selected tags. It waits at most five
-minutes and rejects missing/failed branch verification with existing Actions read
-permissions. The query correctly selected the previous candidate's failed run.
-The new tag's native Actions results establish full coverage/browser/installation
-verification and publication; local targeted checks alone do not establish them.
-
-## Scroll freeze and action runtime correction (2026-10-08)
-
-Scope: v0.1.1 fixes the intermittent legacy-view scroll freeze failure observed
-in the macOS branch CI for v0.1.0, even though that tag's release verification passed.
-A deterministic browser regression scrolls upward and resizes the viewport within
-one animation frame. Before the fix it expected scrollTop 0 but received 329.
-ResizeObserver following now waits for pending scroll events and cancels its
-scheduled callback when the view is hidden or unmounted. Existing exact position,
-return-to-latest and v2/v3 background navigation assertions remain unchanged.
-
-Observed locally: typechecks, isolated compilation, four targeted scrolling cases
-and all 83 browser cases passed. Dependency audit found zero vulnerabilities;
-redacted source/history secret scans and the explicit public-source export passed.
-Workflow actions are pinned to official Node.js 24 runtime commits for checkout
-v7.0.1, setup-node v7.0.0 and upload-artifact v7.0.2.
-
-Initial local coverage runs exceeded 5-second deadlines in backend cases; the
-same two cases passed in isolation without coverage. The local coverage rerun
-uses 15-second test/hook deadlines. CI retains its existing 5-second deadlines,
-behavior assertions and coverage thresholds.
-
-Native platform results and publication are established by the new tag's Actions
-run, not by local Windows checks. No live providers or real discussions were used.
+Publication requires the native Windows/macOS/Ubuntu checks and successful main CI
+for the exact checked-out tag commit, including manually selected tags. It rejects
+missing/failed verification or malformed commit identity with existing Actions read
+permissions. The query selected the known failed candidate correctly. Tagged Actions
+runs establish full coverage, all 83 browser cases, installation checks and release
+publication; local targeted checks alone do not. No real providers or data were used.
 
 ## Public release automation (2026-10-08)
 
