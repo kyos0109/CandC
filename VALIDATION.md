@@ -4,6 +4,21 @@ This is a dated record of observed checks, not a development backlog. Run only
 checks relevant to the current task; see [CONTRIBUTING.md](CONTRIBUTING.md).
 Contracts belong to their owning documents listed in [AGENTS.md](AGENTS.md).
 
+## Viewport remount follow preservation (2026-10-08)
+
+Scope: v0.1.3 completes the position guard by resetting only its geometry baseline
+when v3 tabs unmount the chat viewport. Follow/reading intent remains separate.
+The added diagnostics-to-chat regression expected a bottom distance below 2 but
+received 8960 before this correction. Both background navigation and panel/resize
+races remain covered with unchanged exact reading-position assertions.
+
+Local typechecks, seven guard cases, isolated compilation and all four affected
+scrolling browser scenarios passed. The preceding v0.1.2 tree also completed full
+local coverage (598 passed, three platform skips) with the documented 15-second
+test/hook deadlines. The v0.1.3 native runs retain the canonical five-second limits
+and establish the final full coverage, all 83 browser cases and installation checks.
+The publication gate also rejects an empty or malformed checked-out commit identity.
+
 ## Complete scroll guard and publication gate (2026-10-08)
 
 Scope: v0.1.2 addresses the corresponding v3 race discovered by the v0.1.1

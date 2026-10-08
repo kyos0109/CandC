@@ -45,7 +45,9 @@ export function RoomView({ state, progress, busy, perform, panel, setPanel, hist
     return follow.current;
   };
   useLayoutEffect(() => {
-    if (!visible || tab !== 'chat') return;
+    // Other tabs unmount the viewport; its next mount has no prior position.
+    if (tab !== 'chat') { followedPosition.current = 0; return; }
+    if (!visible) return;
     const content = [state.messages.length, state.room.commands.length, progress?.preview, outcome?.result, state.status];
     const changed = content.some((value, index) => value !== displayedContent.current[index]); displayedContent.current = content;
     if (shouldFollow()) latest(); else if (changed) setNewContent(true);

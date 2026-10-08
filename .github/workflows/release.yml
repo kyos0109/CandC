@@ -80,6 +80,7 @@ jobs:
           GH_REPO: ${{ github.repository }}
           CANDC_RELEASE_SHA: ${{ needs.verify.outputs.commit }}
         run: |
+          [[ "$CANDC_RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]
           passed=false
           for attempt in $(seq 1 30); do
             result=$(gh api "repos/$GH_REPO/actions/workflows/ci.yml/runs?head_sha=$CANDC_RELEASE_SHA&event=push&branch=main&per_page=100" --jq '.workflow_runs | sort_by(.id) | last | [.status // "missing", .conclusion // "pending"] | join(":")')

@@ -97,6 +97,11 @@ for (const version of [2, 3]) test(`connection navigation preserves v${version} 
   const viewport = page.locator('.messages');
   await viewport.evaluate(element => { element.scrollTop = element.scrollHeight; });
   await expect.poll(() => viewport.evaluate(element => element.scrollHeight - element.clientHeight - element.scrollTop)).toBeLessThan(2);
+  if (version === 3) {
+    await page.getByRole('tab', { name: '診斷', exact: true }).click();
+    await page.getByRole('tab', { name: '對話', exact: true }).click();
+    await expect.poll(() => viewport.evaluate(element => element.scrollHeight - element.clientHeight - element.scrollTop)).toBeLessThan(2);
+  }
   const replyWhileHidden = async () => {
     await page.getByRole('button', { name: '連線與設定', exact: true }).click();
     await expect(page.getByRole('heading', { name: '連線與設定', exact: true })).toBeVisible();
