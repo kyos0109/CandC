@@ -111,9 +111,18 @@ or launcher is running before removing the exact `.candc-operation.lock` file.
 
 ## Source and release maintenance
 
-Windows source users keep the existing `.cmd` entrypoints. macOS/Linux use
-`sh scripts/start.sh [--no-browser]` and `sh scripts/stop.sh`. Source launchers install
-dependencies if needed and replace normal build outputs. Verification uses isolated builds.
+Source checkouts contain root-level `Start-CandC` / `Stop-CandC` entrypoints:
+`.cmd` on Windows, `.command` on macOS, and `.sh` on Linux. On macOS, open the
+`.command` files in Finder or run `sh Start-CandC.command [--no-browser]` and
+`sh Stop-CandC.command`. On Linux, run `sh Start-CandC.sh [--no-browser]` and
+`sh Stop-CandC.sh` from the project directory.
+
+Keep the entrypoints in the project root; they locate the shared scripts relative
+to their own file location, so absolute-path launches work from any current directory.
+Use desktop shortcuts or Finder aliases instead of moving the scripts individually.
+The existing `sh scripts/start.sh` / `sh scripts/stop.sh` commands remain supported.
+Source launchers install dependencies if needed and replace normal build outputs.
+Verification uses isolated builds.
 
 ```sh
 npm run package:release -- --repo OWNER/REPO

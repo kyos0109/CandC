@@ -103,7 +103,9 @@ npm ci --ignore-scripts
 npm run dev
 ```
 
-macOS/Linux source users can use `sh scripts/start.sh` and `sh scripts/stop.sh`.
+macOS source users can open `Start-CandC.command` / `Stop-CandC.command` in the
+project root. Linux source users can run `sh Start-CandC.sh` / `sh Stop-CandC.sh`.
+Keep these entrypoints in the project root; they call the shared logic in `scripts/`.
 These source launchers build the app; installed release launchers reuse compiled files.
 
 `dev` and the launcher replace normal build outputs. For development verification

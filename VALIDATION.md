@@ -4,6 +4,19 @@ This is a dated record of observed checks, not a development backlog. Run only
 checks relevant to the current task; see [CONTRIBUTING.md](CONTRIBUTING.md).
 Contracts belong to their owning documents listed in [AGENTS.md](AGENTS.md).
 
+## Source launcher entrypoints (2026-10-08)
+
+Added thin root-level macOS `.command` and Linux `.sh` start/stop entrypoints.
+They preserve arguments and exit codes while delegating to the existing shared
+scripts. Git records executable mode 100755 and LF endings for these entrypoints.
+
+Observed checks: all four entrypoints passed a disposable Linux shell fixture from
+an unrelated working directory with Unicode/space paths, quoted arguments and a
+nonzero child exit code. Eight public-source tests and the scanned public export
+passed. The fixture replaced Node with a stub; it did not start the application,
+replace normal build outputs or access real providers. Native application checks
+remain in the cross-platform CI workflow.
+
 ## Scroll following and publication correction (2026-10-08)
 
 Scope: v0.1.4 addresses scroll-following races observed in native macOS CI and
