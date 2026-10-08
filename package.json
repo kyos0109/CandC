@@ -24,14 +24,19 @@
     "export:public": "node scripts/export-public.mjs"
   },
   "dependencies": {
+    "@fastify/multipart": "^10.1.2",
     "@fastify/static": "^10.1.5",
     "@modelcontextprotocol/sdk": "^1.31.0",
+    "exceljs": "^4.4.0",
     "fastify": "5.12.5",
     "ipaddr.js": "^2.5.0",
+    "mammoth": "^1.13.0",
+    "pdfjs-dist": "^6.4.299",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
+    "yauzl": "^3.4.0",
     "zod": "4.6.5"
   },
   "devDependencies": {
@@ -39,6 +44,7 @@
     "@types/node": "24.19.1",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
+    "@types/yauzl": "^3.4.0",
     "@vitejs/plugin-react": "^6.1.1",
     "@vitest/coverage-v8": "5.0.3",
     "tsx": "4.23.15",
@@ -46,5 +52,13 @@
     "vite": "^8.3.2",
     "vitest": "5.0.3"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "overrides": {
+    "exceljs": {
+      "uuid": "^11.1.1"
+    },
+    "mammoth": {
+      "argparse": "^2.0.1"
+    }
+  }
 }

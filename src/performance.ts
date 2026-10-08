@@ -53,7 +53,7 @@ const recordSchema = z.object({ version: z.literal(1), boundary: z.enum(['begin'
   cliVersions: z.object({ codex: identifier.nullable(), claude: identifier.nullable() }).strict().nullable(),
   preflightProcesses: z.number().int().nonnegative(),
   appVersion: z.literal('0.1.0'), nodeVersion: z.string().max(100), model: identifier.nullable(), effort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).nullable(),
-  research: z.boolean(), purpose: z.enum(['discussion', 'roles', 'summary', 'moderation', 'monitor']),
+  research: z.boolean(), purpose: z.enum(['discussion', 'roles', 'summary', 'moderation', 'monitor', 'selection-options', 'selection-rating']),
   participant: z.string().regex(/^[a-z][a-z0-9-]{0,23}$/).nullable().optional(), session: z.enum(['new', 'resumed']).nullable(),
   characters: z.number().int().nonnegative().nullable(), round: z.number().int().nonnegative().nullable(), position: z.number().int().nonnegative().nullable(),
   offsets: z.partialRecord(z.enum(phases), z.number().finite().nonnegative()), outcome: z.enum(['success', 'cancelled', 'timeout', 'startup-error', 'protocol-error', 'cleanup-error', 'storage-unknown', 'failed']).nullable(),

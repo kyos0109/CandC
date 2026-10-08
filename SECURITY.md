@@ -28,6 +28,17 @@ cookies, bearer tokens, private prompts, or CLI stderr.
 
 ## Enforced boundaries
 
+- Uploaded attachments stay outside static assets and are retrieved only through
+  authenticated discussion-owned routes. System UUIDs, not supplied filenames,
+  determine storage paths; symlinked attachment storage is refused. Raw originals
+  remain owner-downloadable, while AI text uses existing redaction. The application
+  does not claim redaction detects every secret.
+- Document parsing runs in a terminable worker with byte, text, time and ZIP
+  expansion limits. Extractors do not execute uploaded code/macros or calculate
+  formulas. Attachments do not enable research tools or grant filesystem access.
+  Dependencies pin scoped overrides for ExcelJS's UUID and Mammoth's argparse to
+  remove their vulnerable transitive versions; fixture tests exercise extraction.
+
 - Owned subprocesses run without a shell and with bounded output: 2 MiB per JSON
   line, 1,000 queued records and 8 MiB queued JSON bytes. RPC notification queues
   use the same record and byte limits. Failures retire affected execution.

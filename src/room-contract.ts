@@ -1,5 +1,7 @@
 import { z } from 'zod';
+import { selectionConfigSchema, selectionStateSchema, selectionOptionsActionSchema, selectionRatingActionSchema, selectionStateProblem, type SelectionPrompt } from './selection.js';
 import { managementSchema } from './management-contract.js';
+import { attachmentSchema, type ReadableAttachment } from './attachment-contract.js';
 import { workflowSchema, workReportSchema, type Workflow } from './discussion-policy.js';
 import { deliverySchema, conclusionReviewSchema } from './conclusion.js';
 
@@ -23,14 +25,20 @@ export const roomInputSchema = z.object({
   behaviorVersion: z.literal(3), displayName: z.string().trim().max(120).optional(),
   discussionPolicyVersion: z.literal(1).optional(),
   moderatorMode: moderatorModeSchema.optional(),
+  singleSentence: z.boolean().optional(),
   topic: z.string().trim().min(1).max(32_000), goal: z.string().max(32_000).default(''), constraints: z.string().max(32_000).default(''),
-  backend: z.enum(['fake', 'live']).default('fake'), kind: z.enum(['discussion', 'debate']).default('discussion'),
+  backend: z.enum(['fake', 'live']).default('fake'), kind: z.enum(['discussion', 'debate', 'selection']).default('discussion'),
+  selection: selectionConfigSchema.optional(),
   mode: z.enum(['manual', 'auto', 'conclusion']).default('manual'), flow: z.enum(['free', 'alternating']).default('free'),
   participants: z.array(speakerSchema).min(2).max(4), moderator: moderatorSchema.nullable().default(null),
   research: z.boolean().default(false), roots: z.array(z.string().min(1).max(1_000)).max(8).default([]),
   limits: z.object({ maxRounds: z.number().int().min(1).max(1_000), maxDurationMs: z.number().int().min(100).max(86_400_000),
     turnTimeoutMs: z.number().int().min(50).max(3_600_000), maxModeratorCalls: z.number().int().min(1).max(10_000).default(500) }).strict(),
 }).strict().superRefine((value, ctx) => {
+  if (value.kind === 'selection' && value.singleSentence)
+    ctx.addIssue({ code: 'custom', message: 'Single-sentence mode is for discussions and debates, not option evaluation.' });
+  if (value.kind === 'selection' ? !value.selection || value.moderator !== null || value.moderatorMode !== undefined || value.research || value.roots.length > 0 || value.discussionPolicyVersion !== undefined || value.mode !== 'conclusion' : value.selection !== undefined)
+    ctx.addIssue({ code: 'custom', message: 'Selection requires its configuration, conclusion mode, no moderator, research or discussion policy.' });
   if (new Set(value.participants.map(p => p.id)).size !== value.participants.length)
     ctx.addIssue({ code: 'custom', message: 'Speaker seat IDs must be unique.' });
   if (value.kind === 'debate' && value.participants.some(p => !p.instructions.trim()))
@@ -38,6 +46,7 @@ export const roomInputSchema = z.object({
 });
 export type RoomInput = z.infer<typeof roomInputSchema>;
 export const roomMessageSchema = z.object({ id: z.uuid(), sender: z.union([participantSchema, z.literal('user')]),
+  attachments: z.array(attachmentSchema).min(1).max(5).optional(),
   recipient: z.union([participantSchema, z.literal('all')]), text: z.string(), round: z.number().int().nonnegative(),
   inReplyTo: z.uuid().nullable(), status: z.enum(['completed', 'cancelled', 'indeterminate']), createdAt: z.iso.datetime(),
   purpose: z.enum(['discussion', 'moderation', 'notice', 'summary']), taskVersion: z.number().int().positive(),
@@ -55,14 +64,16 @@ export const providerFailureSchema = z.object({ provider: z.literal('codex'),
 }).strict();
 export type ProviderFailure = z.infer<typeof providerFailureSchema>;
 const callSchema = z.object({ id: z.uuid(), participant: participantSchema, provider: providerSchema, generation: z.uuid(),
+  attachments: z.array(z.object({ id: z.uuid(), textSha256: attachmentSchema.shape.textSha256 }).strict()).optional(),
   sessionId: z.string().nullable(), nativeSessionId: z.string().nullable(), taskVersion: z.number().int().positive(),
-  grantId: z.uuid().nullable(), purpose: z.enum(['discussion', 'moderation', 'monitor', 'summary']),
+  grantId: z.uuid().nullable(), purpose: z.enum(['discussion', 'moderation', 'monitor', 'summary', 'selection-options', 'selection-rating']),
   openingSpeaker: seatIdSchema.optional(),
   messages: z.array(z.uuid()), topic: z.string(), goal: z.string(), constraints: z.string(), task: z.string(),
   settings: roomSettingsSchema, payloadHash: z.string(), characters: z.number().int().nonnegative(),
   draft: z.object({ turnId: z.uuid(), text: z.string(), through: z.number().int().nonnegative() }).strict().nullable(),
   status: z.enum(['prepared', 'completed', 'cancelled', 'failed']), startedAt: z.iso.datetime(), durationMs: z.number().nonnegative().nullable(),
   usage: z.record(z.string(), z.number().nonnegative()).nullable(), reservationMs: z.number().nonnegative(),
+  sentenceRewrite: z.object({ requestId: z.uuid(), reason: z.enum(['empty', 'format', 'sentences', 'metadata']), payloadHash: z.string(), characters: z.number().int().nonnegative() }).strict().optional(),
   references: z.array(referenceSchema).max(100).default([]),
   researchPerformed: z.boolean().optional(),
   providerFailure: providerFailureSchema.optional(),
@@ -87,13 +98,14 @@ export const roomControlSchema = z.object({ version: z.literal(3), taskVersion: 
   continuation: z.enum(['continue', 'yield', 'done']), action: z.union([moderatorActionSchema,
     z.object({ type: z.literal('none') }).strict(),
     z.object({ type: z.literal('propose'), result: z.string().min(1).max(32_000), dissent: z.array(z.string()).max(30), unresolved: z.array(z.string()).max(30), delivery: deliverySchema.optional() }).strict(),
-    z.object({ type: z.literal('confirm'), proposalId: z.uuid(), review: conclusionReviewSchema.optional() }).strict()]),
+    z.object({ type: z.literal('confirm'), proposalId: z.uuid(), review: conclusionReviewSchema.optional() }).strict(), selectionOptionsActionSchema, selectionRatingActionSchema]),
 }).strict();
 export type RoomControl = z.infer<typeof roomControlSchema>;
 export type MetadataDiagnostic = z.infer<typeof metadataDiagnosticSchema>;
 const proposalSchema = z.object({ id: z.uuid(), author: seatIdSchema, taskVersion: z.number().int().positive(), result: z.string(), dissent: z.array(z.string()), unresolved: z.array(z.string()), confirmed: z.array(seatIdSchema), delivery: deliverySchema.optional(),
   reviews: z.array(conclusionReviewSchema.extend({ actor: seatIdSchema, callId: z.uuid() }).strict()).max(4).optional() }).strict();
 const roomRuntimeSchema = z.object({ taskVersion: z.number().int().positive(), configurationVersion: z.number().int().positive(),
+  selection: selectionStateSchema.optional(),
   deliveryVersion: z.literal(1).optional(),
   conclusionRequest: z.object({ target: participantSchema, reason: z.string().min(1).max(16_000), kind: z.enum(['repair', 'review']).optional() }).strict().nullable().optional(),
   currentSpeaker: seatIdSchema.nullable(), contributions: z.number().int().nonnegative(), moderatorCalls: z.number().int().nonnegative(),
@@ -118,10 +130,14 @@ export const roomStateSchema = roomInputSchema.safeExtend({ id: z.uuid(), sequen
   displayVersion: z.number().int().nonnegative().optional(), room: roomRuntimeSchema,
 }).superRefine((state, ctx) => {
   const fail = (message: string) => ctx.addIssue({ code: 'custom', message });
+  const selectionProblem = selectionStateProblem(state); if (selectionProblem) fail(selectionProblem);
   const ids = new Set<string>(state.participants.map(p => p.id)); if (state.moderator) ids.add('moderator');
   const messages = new Map(state.messages.map(m => [m.id, m]));
+  const attachmentIds = new Set<string>();
   if (messages.size !== state.messages.length) fail('Duplicate message identity.');
   for (const m of state.messages) {
+    if (m.attachments?.length && (m.sender !== 'user' || state.kind === 'selection' || m.attachments.reduce((n, a) => n + a.characters, 0) > 200_000)) fail('Invalid message attachments.');
+    for (const a of m.attachments ?? []) { if (attachmentIds.has(a.id)) fail('Duplicate attachment identity.'); attachmentIds.add(a.id); }
     if (m.sender !== 'user' && !ids.has(m.sender) || m.recipient !== 'all' && !ids.has(m.recipient)) fail('Unknown message participant.');
     if (m.inReplyTo && !messages.has(m.inReplyTo)) fail('Unknown reply target.');
     if (m.sender === 'moderator' && m.recipient !== 'all') fail('Moderation is public.');
@@ -144,6 +160,10 @@ export const roomStateSchema = roomInputSchema.safeExtend({ id: z.uuid(), sequen
     if (c.nativeSessionId) { const key = `${provider}:${c.nativeSessionId}`, previous = ownership.get(key); if (previous && previous !== c.participant) fail('Historical native session shared across owners.'); ownership.set(key, c.participant); }
     if (c.messages.some(id => { const m = messages.get(id); return !m || m.status !== 'completed' || m.recipient !== 'all' && m.recipient !== c.participant; })) fail('Ineligible call input.');
     if (c.participant === 'moderator' && c.messages.some(id => messages.get(id)?.recipient !== 'all')) fail('Private input delivered to moderator.');
+    if (c.attachments) {
+      const expected = c.messages.flatMap(id => messages.get(id)?.attachments ?? []);
+      if (expected.length !== c.attachments.length || c.attachments.some((a, index) => a.id !== expected[index]?.id || a.textSha256 !== expected[index]?.textSha256)) fail('Call attachment snapshot differs from its messages.');
+    }
     if (c.references.some(r => { const m = messages.get(r.messageId); return !m || m.status !== 'completed' || m.recipient !== 'all' && m.recipient !== c.participant; })) fail('Ineligible response reference.');
   }
   if (state.room.grant && (!ids.has(state.room.grant.target) || state.room.muted.includes(state.room.grant.target))) fail('Invalid speaking grant.');
@@ -187,13 +207,16 @@ export const roomStateSchema = roomInputSchema.safeExtend({ id: z.uuid(), sequen
 export type RoomDiscussion = z.infer<typeof roomStateSchema> & { storage?: { status: 'unconfirmed'; reason: string }; v2?: undefined };
 export type RoomSession = z.infer<typeof sessionSchema>;
 export type RoomPrompt = { actor: ParticipantId; provider: ProviderId; taskVersion: number; grantId: string | null;
+  singleSentence?: boolean;
+  sentenceCorrection?: 'empty' | 'format' | 'sentences' | 'metadata';
+  selection?: SelectionPrompt;
   openingSpeaker?: ParticipantId;
   deliveryVersion?: 1 | undefined; conclusionRequest?: RoomDiscussion['room']['conclusionRequest'];
   moderatorMode?: 'facilitator' | 'judge';
   discussionKind?: RoomInput['kind'];
   execution?: { mode: RoomInput['mode']; researchEnabled: boolean; researchAvailable: boolean; policyVersion: 1 | null; currentTaskKey: string | null };
   workflow?: Workflow;
-  purpose: RoomCall['purpose']; task: string; goal: string; constraints: string; messages: RoomMessage[];
+  purpose: RoomCall['purpose']; task: string; goal: string; constraints: string; messages: Array<Omit<RoomMessage, 'attachments'> & { attachments?: ReadableAttachment[] }>;
   roster: { id: string; provider: ProviderId; role: string; muted: boolean; label?: string }[]; draft: RoomCall['draft'];
   proposal: RoomDiscussion['room']['proposal']; results: RoomDiscussion['room']['topicHistory']; };
 export const ROOM_CONTROL_START = '<<<CANDC_CONTROL_V3>>>';

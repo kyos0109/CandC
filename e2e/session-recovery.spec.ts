@@ -51,9 +51,28 @@ test('review gaps and done speakers pause without inventing a result, with local
   const state = await (await page.request.get(`/api/discussions/${id}`)).json();
   expect(state.status).toBe('paused'); expect(state.room.contributions).toBe(4);
   expect(state.room.proposal.confirmed).toEqual(['codex']); expect(state.room.proposal.reviews[0].gaps).toEqual(['Missing fixture evidence.']);
+  expect(state.room.proposal.reviews[0].adequate).toBe(false);
   expect(state.room.outcome).toBeNull(); expect(state.room.interimResults ?? []).toEqual([]);
   await expect(page.locator('.discussion-notice')).toContainText('提案尚未通過審查');
   await page.evaluate(() => localStorage.setItem('candc-locale', 'en')); await page.reload();
   await expect(page.locator('.discussion-notice')).toContainText('The proposal has not passed review');
   expect((await (await page.request.get(`/api/discussions/${id}`)).json()).room.calls).toEqual(state.room.calls);
+});
+
+test('a contradictory review is clarified by the same reviewer without accepting unresolved gaps', async ({ page }) => {
+  const id = await create(page, 'Contradictory idle fixture.', 'conclusion');
+  const state = await (await page.request.get(`/api/discussions/${id}`)).json();
+  const proposal = state.room.proposal;
+  expect(state.status).toBe('paused'); expect(state.room.outcome).toBeNull(); expect(state.room.interimResults ?? []).toEqual([]);
+  expect(proposal.confirmed).toEqual(['codex']); expect(proposal.reviews).toHaveLength(1);
+  expect(proposal.reviews[0]).toMatchObject({ actor: 'claude', adequate: false, gaps: ['Missing fixture evidence.'] });
+  expect(state.room.calls.slice(0, 3).map((call: { participant: string }) => call.participant)).toEqual(['codex', 'claude', 'claude']);
+  expect(state.room.calls[2].id).toBe(proposal.reviews[0].callId);
+  expect(state.messages.some((message: { sender: string; text: string }) => message.sender === 'claude' &&
+    message.text === `Saved clarification by claude for proposal ${proposal.id}, target claude.`)).toBe(true);
+  await expect(page.locator('.discussion-notice')).toContainText('提案尚未通過審查');
+  await page.evaluate(() => localStorage.setItem('candc-locale', 'en')); await page.reload();
+  await expect(page.locator('.discussion-notice')).toContainText('The proposal has not passed review');
+  const reloaded = await (await page.request.get(`/api/discussions/${id}`)).json();
+  expect(reloaded.room.proposal).toEqual(proposal); expect(reloaded.room.calls).toEqual(state.room.calls); expect(reloaded.room.outcome).toBeNull();
 });

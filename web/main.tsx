@@ -3,6 +3,7 @@ import { App } from './App';
 import { getLocale, setLocale } from './i18n.js';
 import './styles/tokens.css';
 import './styles/base.css';
+import './styles/attachments.css';
 import './styles/components.css';
 import './styles/shell.css';
 import './styles/history.css';

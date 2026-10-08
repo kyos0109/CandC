@@ -1,0 +1,18 @@
+.attachment-picker { padding: .65rem 0; display: grid; gap: .4rem; min-width: 0; }
+.attachment-picker input[type=file] { display: none; }
+.attachment-picker-heading, .attachment-card-heading, .attachment-actions { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
+.attachment-picker small, .attachment-card small { opacity: .75; }
+.attachment-picker ul { list-style: none; margin: 0; padding: 0; display: grid; gap: .35rem; }
+.attachment-picker li { display: flex; align-items: center; gap: .6rem; min-width: 0; }
+.attachment-picker li span { overflow-wrap: anywhere; flex: 1; }
+.attachment-picker li small, .attachment-picker li button { flex-shrink: 0; }
+.attachment-cards { display: grid; gap: .6rem; margin-top: .65rem; min-width: 0; }
+.attachment-card { padding: .7rem; border: 1px solid var(--line); border-radius: .6rem; min-width: 0; background: var(--raised); color: var(--text); }
+.attachment-card a { color: var(--accent); }
+.attachment-card button, .attachment-card pre { color: var(--text); }
+.attachment-card small { color: var(--muted); opacity: 1; }
+.attachment-card strong { overflow-wrap: anywhere; }
+.attachment-card > small { display: block; margin-top: .4rem; }
+.attachment-actions { margin-top: .45rem; }
+.attachment-text { max-height: 24rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: .85rem; text-align: left; }
+@media (max-width: 767px) { .attachment-picker-heading { align-items: flex-start; } .attachment-card { padding: .55rem; } }

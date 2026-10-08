@@ -63,18 +63,30 @@ const fault = async stage => { if (stage === failStage) { failStage = null; thro
 const performance = new PerformanceStore(path.join(directory, 'performance'), true);
 const legacy = new DiscussionController(new DiscussionStore(directory, fault), { codex: new FakeAdapter('codex', contribution('codex'), 15), claude: new FakeAdapter('claude', contribution('claude'), 15) }, undefined, undefined, performance);
 const adapters = new Map();
+const selectionRetries = new Set();
 const policyResponse = request => {
-  if (request.topic === 'Reviewed idle fixture.') {
+  if (request.topic === 'Selection retry fixture.' && request.room.purpose === 'selection-rating' && request.room.actor === 'claude' && !selectionRetries.has(request.room.selection.optionSet.id)) {
+    selectionRetries.add(request.room.selection.optionSet.id);
+    return 'Fixture evaluator could not complete the score matrix.';
+  }
+  if (request.topic === 'Reviewed idle fixture.' || request.topic === 'Contradictory idle fixture.') {
     const r = request.room;
+    const contradictory = request.topic === 'Contradictory idle fixture.';
     const peer = r.messages.findLast(m => m.sender !== 'user' && m.sender !== r.actor && m.purpose === 'discussion');
     const action = !r.proposal ? { type: 'propose', result: 'Conditional fixture answer.', dissent: ['A retained objection.'], unresolved: ['Missing fixture evidence.'],
       delivery: { status: 'partial', kind: 'answer', basis: ['Fixture reasoning only.'] } } :
-      r.actor === 'claude' && !r.proposal.reviews?.length ? { type: 'confirm', proposalId: r.proposal.id,
-        review: { adequate: true, reason: 'The conditional answer is accepted with a requested-content gap.', gaps: ['Missing fixture evidence.'] } } : { type: 'none' };
-    return `Saved fixture response from ${r.actor}.\n${ROOM_CONTROL_START}\n${JSON.stringify({ version: 3, taskVersion: r.taskVersion, grantId: r.grantId, continuation: 'done', action,
+      r.actor === 'claude' && (!r.proposal.reviews?.length || contradictory && r.conclusionRequest?.kind === 'repair') ? { type: 'confirm', proposalId: r.proposal.id,
+        review: { adequate: contradictory && !r.proposal.reviews?.length, reason: 'The requested evidence is missing from the conditional answer.', gaps: ['Missing fixture evidence.'] } } : { type: 'none' };
+    const reply = contradictory && r.conclusionRequest?.kind === 'repair'
+      ? `Saved clarification by ${r.actor} for proposal ${r.proposal.id}, target ${r.conclusionRequest.target}.` : `Saved fixture response from ${r.actor}.`;
+    return `${reply}\n${ROOM_CONTROL_START}\n${JSON.stringify({ version: 3, taskVersion: r.taskVersion, grantId: r.grantId, continuation: 'done', action,
       references: peer ? [{ messageId: peer.id, disposition: 'checked', reason: 'Fixture peer argument assessed.' }] : [] })}\n${ROOM_CONTROL_END}`;
   }
   const text = fakeRoomResponse(request);
+  if (request.topic.startsWith('Attachment browser fixture')) {
+    const extracted = request.room.messages.flatMap(m => (m.attachments ?? []).map(a => a.text)).join('\n');
+    return `Fixture received attachment text: ${extracted}\n${text}`;
+  }
   if (request.topic.startsWith('Review handoff fixture:')) {
     const { control } = parseRoomAnswer(text), r = request.room;
     if (r.actor === 'moderator') control.action = r.openingSpeaker ? { type: 'observe' } : { type: 'speak', target: 'claude', task: 'Respond to the public rebuttal.' };

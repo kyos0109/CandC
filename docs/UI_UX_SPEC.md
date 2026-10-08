@@ -1,5 +1,72 @@
 # Current conversation interface contract
 
+## Optional discussion scenarios
+
+The topic section offers six optional cards in a two-column desktop grid and a
+single column below 768px: Decision Lab, Engineering Review, Research Council,
+Incident War Room, Code Review Board and Simulation Arena. No card is selected
+initially. Cards are keyboard-accessible buttons with an explicit selected state;
+clicking one applies a template and opens the existing goal fields without starting
+inference. Cards retain their selected background and border on hover. All settings
+remain editable.
+
+Templates prefill only goal, discussion kind, execution mode and each existing
+speaker's label/instructions. All default to Collaborative analysis; Incident War Room and
+Simulation Arena default to manual, the others to until-conclusion. Decision Lab
+produces a decision record rather than a scored selection. Research Council grants
+no research access, and the review/incident cards do not access repositories or
+systems. Existing provider/model/effort, moderator authority, research, limits,
+response mode, attachments, topic and constraints remain unchanged.
+
+Track untouched, template-filled and user-edited origins separately for each
+managed field, with speaker origins keyed by UID. User edits, including clearing
+text or explicitly selecting the current kind/mode, survive later template changes.
+Reapplying the current card updates only fields not edited by the user. Seat
+additions and preset replacement do not automatically apply roles; reapply explicitly
+using the current order. Cards are temporarily disabled while a seat removal is
+pending, so reapplication uses the remaining seats. Removed UIDs do not transfer
+edits to other seats. Model/effort changes do not mark role text as user-edited or
+invalidate reset undo.
+
+Selection disables all scenario cards and explains how to change Discussion format
+to Collaborative analysis or Debate first. Switching to selection retains the
+editable goal and role text. A manually chosen debate retains explicit side
+requirements and its existing confirmation flow. UI labels follow the selected
+locale; inserted text is an editable snapshot and is never translated on locale
+changes or same-card reapplication. Template identity/origins are form-only state;
+only existing Room Input fields are submitted and saved.
+
+After application, show a summary derived from the current form: scenario name,
+seat count, discussion form, execution mode, manually edited managed fields and
+all seat/moderator readiness or model-setting gaps. Use the existing validation
+rules; the summary does not choose models or grant authority. Offer navigation to
+the seat settings. Labels follow the locale without translating editable content.
+
+An explicit Reset to template defaults action may replace user-edited managed
+fields using the selected localized snapshot. Selection, busy state and pending
+seat removal disable reset/undo. Provide one undo snapshot of managed fields and
+their origins, keyed by seat UID; repeated resets retain the original undo point.
+Undo preserves all unmanaged settings, including changes made after reset. Editing
+a managed field, adding/removing/replacing seats or applying any scenario clears
+undo. Locale changes do not clear it. Restore focus to the reset button after undo.
+
+## Attachments
+
+Version 3 discussion/debate creation and composers provide a multi-file picker
+and drop target. Show filenames, sizes and remove buttons before submission;
+creation still needs a topic, while later input can consist only of attachments.
+The limit is five files, 10 MiB each and 25 MiB total. Failed upload/extraction
+retains the draft and identifies the failing file; no partial message is sent.
+Retries retain the same operation identity until the submitted content changes.
+
+Saved message cards offer original-file download and a plain-text view of exactly
+the extracted/redacted material supplied to AI. Documents show their text-only
+limitation, and redaction is distinguished from the unchanged original download.
+Saved files are not labelled as understood by AI. Private cards inherit the
+message recipient and privacy reminder. The picker is unavailable in selection
+and legacy discussions. UI labels switch languages without translating filenames,
+document contents or user/model prose.
+
 > **Implementation status:** The opening, auto/manual reviewed interim results and
 > optional-claim diagnostics below are included in this revision. See the
 > [implementation comparison](IMPLEMENTATION_STATUS.md) and dated validation limits.
@@ -9,6 +76,17 @@ behavior requested by the current task. Historical concepts and implementation
 handoffs are retained in Git history, not active development instructions.
 
 ## Layout and identity
+
+Discussion and debate creation offer **Response mode**: Standard mode (default)
+or Single-sentence mode. The latter says each AI uses one short sentence per turn,
+including conclusions, and can accompany any execution mode. The choice is fixed
+after creation and appears in the discussion header in both locales. Option
+evaluation hides this control and never submits the flag. Pending turns show only
+generation status until the backend validates the complete answer; rejected
+drafts are not shown, including after cancellation or failure. A second rejected
+answer pauses with an explicit failure notice instead of a truncated answer.
+
+The creation form also offers **Option evaluation** (`kind=selection`): default four options, configurable from two to six. The first seat generates options and three shared criteria; every seat independently scores each option from 0–10. This mode hides moderator, debate scheduling, research and round controls. Its dedicated view shows phase, completed/missing reviewers, model identities, frozen candidates and criteria, score matrix and expandable reasons/limitations. Final ranking appears only after all ratings are valid and saved; ties share a rank. It is labeled AI evaluation, not unanimous agreement. Pause, stop, explicit resume/reconstruction, storage recovery, time-limit extension, diagnostics and JSON/Markdown export retain their existing authority. Inputs remain frozen; repeat or revised evaluations require a new room. Both locales translate application labels only, preserving generated content.
 
 - Reading and joining the discussion dominate. Only the message pane scrolls;
   execution controls, composer and actionable pause/storage notices stay visible.

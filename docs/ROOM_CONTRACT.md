@@ -8,6 +8,16 @@
 For setup, everyday controls and result interpretation, see the [user guide](USER_GUIDE.md).
 This document owns the exact version 3 rules; the guide and README summarize them.
 
+## Option evaluation v1
+
+New v3 rooms may explicitly select `kind=selection` with `selection:{version:1,optionCount:2..6}` (default count 4). They require conclusion mode, 2–4 seats, no moderator, no active discussion policy and no research/roots. The first seat generates the options and exactly three equally weighted criteria; all configured seats then evaluate every option/criterion with integer scores 0–10 and reasons. Higher always means better fit. Each call uses a new native session and workspace, no prior messages, and only the frozen topic/goal/constraints, that seat's instructions and the common option set. Ratings and generation history never enter later reviewer prompts, including for repeated providers or the generating seat.
+
+`room.selection` owns generating/scoring/complete phases, the option set identified by its generation call ID, per-seat ratings with call provenance and the final ranking. Valid structured actions are `selection-options` and `selection-rating`; call purposes have the same names. Public answer, validated payload and completed call commit together. Missing/duplicate/unknown matrix entries, incorrect set identity, invalid scores or reasons, wrong option count or duplicate option titles/IDs pause without counting the response. Public fallback text remains saved. No automatic retries, fabricated zero scores or reduced reviewer roster are allowed.
+
+After every seat has a confirmed valid rating, the controller commits the deterministic ranking: total divided by three times reviewer count. Sort by exact integer totals, display two decimals, retain original option order for ties and assign shared competition ranks. There is no extra model synthesis or tiebreaker. This is a model evaluation result, never a participant consensus or moderator ruling; proposal/outcome remain null. Incomplete runs expose saved individual scores without a final ranking. JSON and Markdown export preserve options, criteria, scores, reasons, limitations and provenance.
+
+The automatic sequence makes one generation and one call per seat under total/turn time limits; discussion round limits do not interrupt this finite sequence. Pause finishes the current call; stop aborts it. Explicit continuation fills missing work only. Uncertain provider outcomes require reconstruction, uncertain storage blocks all writes/scheduling until verified recovery and reconstruction. Frozen inputs cannot be edited or supplemented; create a new evaluation for changes. Only time limits may be adjusted without changing the task version. Completed evaluations cannot start again. Existing journals are not rewritten; rollback requires matching binary/journal versions because older strict schemas reject the new fields and purposes.
+
 Version 3 is separate from the version 1/2 controller and schemas. `DiscussionService` routes histories by their immutable behavior version and admits only one active discussion across both controllers. New records use compact journal format 4; opening a mixed directory does not migrate older records. Storage remains the authoritative journal with append, sync and close before updating memory or emitting a committed event. Any uncertain append blocks scheduling and further journal writes until explicit verified recovery.
 
 ## Participants and provider boundary
@@ -67,13 +77,95 @@ Judge finish records `authority=moderator`, result, dissent, unresolved and unha
 
 Idle, version-checked Settings can change the moderator mode. Mode changes retire native sessions, preserve confirmed messages, clear proposal/outcome and do not start a turn. Switching to facilitator clears historical mutes. Journals omitting the field are read without rewriting; on their first explicit start with a moderator, the start commit records facilitator mode, retires old sessions and clears historical mutes. Previously saved rulings remain historical until the user explicitly reopens the discussion. An older strict-schema build may reject records containing the new field; preserve the matching data/build for rollback.
 
+## Single-sentence response mode
+
+New discussion/debate inputs may set optional `singleSentence: true`; omission or
+false preserves ordinary replies without rewriting old journals. The choice is
+fixed at creation, independent of manual/auto/conclusion scheduling, and is not
+available for structured option evaluation. All AI turns, including moderator
+openings, summaries, conclusions and peer reviews, use the same rule.
+
+The public answer must be one nonempty paragraph and one sentence, without lists
+or block formatting. `Intl.Segmenter` checks sentence boundaries after masking
+URLs and common title/example abbreviations; it does not prove semantic brevity.
+Prompts request one short main point without a hard character limit. Public prose
+in control metadata must repeat the sentence or quote contiguous excerpts from
+it: result, dissent, unresolved, delivery basis, review reasons/gaps, reference
+reasons, moderator instructions and workflow prose cannot add another answer.
+IDs, verdicts and source references retain their existing semantics.
+
+Drafts are buffered and never emitted in previews, monitor input or failure
+messages. After a complete, identity-valid answer fails the sentence check, the
+same seat and native session get at most one correction with the original task
+and permissions. The prepared call durably records `sentenceRewrite` (a distinct
+provider request ID, reason, payload hash and character count) before that second invocation. Both attempts
+share the original timeout, call ID, grant and contribution; usage is accumulated.
+Only an accepted answer can advance response claims or conclusion review.
+Repeated rejection saves the failed-call diagnostic, removes its session and
+pauses without publishing the rejected text. Explicit continuation may try a new
+turn; no third automatic invocation is made for the failed turn.
+
+Pause requested before correction prevents it; pause during correction waits for
+the current answer, and stop cancels immediately. Transport/cleanup failures,
+invalid control identity and unconfirmed storage never trigger sentence retries.
+Storage recovery retains its verification barrier and never replays a turn.
+Older strict-schema binaries may reject these optional fields; rollback requires
+the matching journal/build pair, not editing or stripping historical records.
+
+## User attachments v1
+
+Version 3 discussion/debate creation and user messages accept a multipart request
+with one `payload` JSON field followed by up to five `files` fields. Existing JSON
+requests remain supported. Selection and version 1/2 attachments are rejected.
+Creation attaches files to the first public user message; subsequent messages may
+contain attachments without text and retain their existing seat recipient.
+
+Each file is limited to 10 MiB, with 25 MiB per request. Text extraction is limited
+to 100,000 UTF-16 code units per file and 200,000 per request; overflow rejects the
+whole input, never truncates. Strict UTF-8 and BOM UTF-16 text/code/CSV/JSON are
+supported. PDF text retains page labels, DOCX extracts document text, and XLSX
+includes worksheets (including hidden sheets), cell addresses, formulas and cached
+results without recalculation. Images, charts and scans are not interpreted. Empty,
+encrypted, unsupported and malformed documents fail without adding a message.
+
+Parsing uses a terminable worker with a 30-second per-file deadline and a 256 MiB
+V8 old-generation limit. Office ZIPs are checked for actual inflated size (100 MiB)
+and entry count (10,000) before parsing. External resources and macros are not run.
+The original remains unchanged; extracted text receives existing secret redaction.
+
+Optional message `attachments` contain server-generated IDs, name, format, byte
+and character counts, original/text SHA256, parserVersion=1 and warnings. Original
+files and text live in the history directory's `attachments` child, outside journals,
+events and performance data. Files are written and synced before the referencing
+journal commit; an unknown journal outcome retains them and blocks scheduling.
+Known pre-commit failures remove their unreferenced files. A process crash can leave
+unreferenced files; they are preserved rather than guessed safe to delete, and the
+discussion's permanent deletion includes all of its attachment files.
+
+Retries use the existing discussion/message ID and compare ordered filename,
+original hash and byte count with the normalized input. The server never accepts
+client-supplied file paths or attachment descriptors. Visibility is filtered by
+seat before text is loaded; moderators only get public attachments, and provider
+identity never widens access. This works with research disabled and adds no tools
+or filesystem roots. Incremental sessions receive attachments with their messages;
+rebuilt sessions receive complete eligible history. Calls record ordered attachment
+IDs and text hashes. Missing or changed content blocks the dependent call.
+
+Authenticated `GET /api/discussions/:id/attachments/:attachmentId/original` forces
+download; `/text` returns `{attachment,text}`. Both verify discussion ownership and
+the requested content hash. JSON exports optionally add `attachmentContents`;
+Markdown exports append attributed text and metadata. Exported text can include
+private input, just like the existing owner-visible history export. Neither export
+embeds original binary files. Old journals are read without modification; older
+strict-schema builds may reject new fields, so rollback needs matching data/build.
+
 ## Compatibility and operations
 
 ### Conclusion delivery v1
 
 New rooms record `room.deliveryVersion=1`. A proposed result carries `delivery:{status:complete|partial,kind:answer|disagreement|undetermined,basis:[...]}` alongside its existing result/dissent/unresolved. These fields describe the delivered answer; they do not require a domain, scenario, fixed discussion stages, stance, decision framework or public prose template. The original goal and subsequent user clarifications determine the answer and its depth. A requested plan, poem or other creative form remains a valid answer. A reasoned disagreement or justified inability to determine an answer can be complete; missing requested content is partial and must be named in unresolved. Judge finish has the same delivery requirement without inventing participant consensus.
 
-Each peer confirmation includes `review:{adequate,reason,gaps}` against the exact proposal. Missing review data does not count as confirmation. An inadequate review, or a positive review with remaining delivery gaps, records the peer's review and asks the author to publish a revised proposal. Every replacement gets a new proposal ID, empty peer reviews and only the author's confirmation. Optional `conclusionRequest.kind` distinguishes substantive review from technical repair. Ordinary review and revision do not consume repair attempts. A substantive review request gives its author one priority response: the author may revise the proposal or rebut the review. After a completed same-version response is saved, that request is cleared in the speaker-processing commit before applying any new action. A none response, including neutral control fallback, leaves the original proposal, negative reviews and missing peer confirmations intact; it never creates an outcome or interim result. Ordinary scheduling and deferred invitations can then proceed. A new technical repair request created by the response remains pending. Failed, indeterminate or stale-version responses and unconfirmed storage do not consume the substantive request. Within an explicit execution, each unresolved task-version/target/proposal repair episode allows three actual target-speaker repair calls; successful resolution resets the counter, and unrelated turns cannot consume it. Conclusion mode pauses after exhaustion with the saved answer and gaps available for explicit continuation. Auto/manual discard that unaccepted proposal/request, record `delivery-repair-limit` and continue subject to normal boundaries and budgets. A correction target is scheduled before an ordinary facilitator invitation. An invitation for a different speaker is retained at the same task version, without being overwritten by routine coordination, until correction finishes and that speaker can address it. Input/configuration changes still invalidate it. Older requests without kind are classified from their saved peer reviews. Full review gaps remain in the proposal payload, rather than being copied into a size-limited task. Review provenance must reference a completed same-version call owned by that peer. Model adequacy assessments and structured fields are not independent proof of semantic or factual correctness.
+Each peer confirmation includes `review:{adequate,reason,gaps}` against the exact proposal. Missing review data does not count as confirmation. Review gaps identify missing requested content that blocks acceptance of the delivery. Limitations or dissent already faithfully retained in a sufficient conditional answer belong in the proposal's unresolved/dissent fields, not review gaps. An inadequate review records the peer's review and asks the author to respond or revise. A contradictory review (adequate=true with nonempty gaps) remains unconfirmed and creates a technical repair for the same reviewer against the exact proposal ID. The reviewer must independently clarify acceptance with empty gaps or rejection with the blocking gaps; the controller never deletes gaps or infers acceptance. New substantive limitations require a revised proposal. This clarification uses the existing three-call repair budget, including when the reviewer says done or responds with none. Exhaustion in conclusion mode explicitly reports the unresolved contradiction; auto/manual retain their existing repair-exhaustion behavior. Every replacement gets a new proposal ID, empty peer reviews and only the author's confirmation. Optional `conclusionRequest.kind` distinguishes substantive review from technical repair. Ordinary review and revision do not consume repair attempts. A substantive review request gives its author one priority response: the author may revise the proposal or rebut the review. After a completed same-version response is saved, that request is cleared in the speaker-processing commit before applying any new action. A none response, including neutral control fallback, leaves the original proposal, negative reviews and missing peer confirmations intact; it never creates an outcome or interim result. Ordinary scheduling and deferred invitations can then proceed. A new technical repair request created by the response remains pending. Failed, indeterminate or stale-version responses and unconfirmed storage do not consume the substantive request. Within an explicit execution, each unresolved task-version/target/proposal repair episode allows three actual target-speaker repair calls; successful resolution resets the counter, and unrelated turns cannot consume it. Conclusion mode pauses after exhaustion with the saved answer and gaps available for explicit continuation. Auto/manual discard that unaccepted proposal/request, record `delivery-repair-limit` and continue subject to normal boundaries and budgets. A correction target is scheduled before an ordinary facilitator invitation. An invitation for a different speaker is retained at the same task version, without being overwritten by routine coordination, until correction finishes and that speaker can address it. Input/configuration changes still invalidate it. Older requests without kind are classified from their saved peer reviews. Full review gaps remain in the proposal payload, rather than being copied into a size-limited task. Review provenance must reference a completed same-version call owned by that peer. Model adequacy assessments and structured fields are not independent proof of semantic or factual correctness.
 
 All-speaker confirmation means agreement on the delivered text, including an explicit account of differing positions; it never requires every speaker to adopt the same substantive stance. A confirmed partial result remains partial in the stored outcome, pause reason and UI. Stopping, exhaustion and provisional checkpoints never create a complete outcome. The conclusion page shows the delivered answer/basis/limitations first and collapses historical stages after an outcome; it does not promote the latest individual message to the final answer. Further substantive changes require a new proposal and new peer confirmation, not an unreviewed post-confirmation rewrite.
 

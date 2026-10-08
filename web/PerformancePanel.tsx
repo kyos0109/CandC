@@ -12,7 +12,7 @@ const names: Record<string, string> = {
 };
 const outcomes: Record<string, string> = { get success() { return translate("完成"); }, get cancelled() { return translate("已取消"); }, get timeout() { return translate("逾時"); }, get 'startup-error'() { return translate("啟動失敗"); },
   get 'protocol-error'() { return translate("協定失敗"); }, get 'cleanup-error'() { return translate("清理失敗"); }, get 'storage-unknown'() { return translate("未確認保存"); }, get failed() { return translate("失敗"); } };
-const purposes = { get discussion() { return translate("一般發言"); }, get moderation() { return translate("主持裁決"); }, get monitor() { return translate("主持監看"); }, get summary() { return translate("整理"); }, get roles() { return translate("立場提議"); } };
+const purposes = { get "selection-options"() { return translate("產生選項與標準"); }, get "selection-rating"() { return translate("獨立評分"); }, get discussion() { return translate("一般發言"); }, get moderation() { return translate("主持裁決"); }, get monitor() { return translate("主持監看"); }, get summary() { return translate("整理"); }, get roles() { return translate("立場提議"); } };
 export function PerformancePanel({ discussionId }: { discussionId: string }) {
   const [view, setView] = useState<PerformanceView | null>(null), [error, setError] = useState(false);
   useEffect(() => {

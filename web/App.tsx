@@ -1,6 +1,6 @@
 import { translate, useLocale, systemMessage } from './i18n.js';
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
-import { api, operation, statusText, discussionName, type AnyDiscussion as Discussion, type EnvironmentStatus, type Models, type DiscussionIndex } from './api';
+import { api, attachmentBody, operation, statusText, discussionName, type AnyDiscussion as Discussion, type EnvironmentStatus, type Models, type DiscussionIndex } from './api';
 import { RoomNewDiscussion } from './RoomNewDiscussion';
 import type { RoomInput } from '../src/room-contract';
 import type { Progress } from './DiscussionView';
@@ -12,6 +12,7 @@ import { Inspector, useNarrow } from './Inspector';
 import { History, folderLabels, type HistoryAction } from './History';
 import type { Folder } from '../src/management';
 
+const SelectionView = lazy(() => import('./SelectionView').then(module => ({ default: module.SelectionView })));
 const RoomView = lazy(() => import('./RoomView').then(module => ({ default: module.RoomView })));
 const DiscussionView = lazy(() => import('./DiscussionView').then(module => ({ default: module.DiscussionView })));
 const ConnectionsPage = lazy(() => import('./ConnectionsPage').then(module => ({ default: module.ConnectionsPage })));
@@ -143,7 +144,7 @@ export function App() {
   useEffect(() => { if (state?.status !== 'running') setProgress(null); }, [selected, state?.status]);
   const perform = async (action: () => Promise<unknown>) => { setBusy(true); setError(''); try { await action(); await refresh(); } catch (e) { setError(e instanceof Error ? e.message : translate("操作失敗。")); await refresh().catch(() => undefined); } finally { setBusy(false); } };
   // The sides of a debate were chosen on the creation form, so creating it is the confirmation: confirm them, then start like any other discussion.
-  const create = async (input: RoomInput) => perform(async () => { const id = crypto.randomUUID(); const created = await api<Discussion>('/api/discussions', 'POST', { id, input }); setDetail(created); queryRef.current.selected = id; setSelected(id); setFolder("active"); setPage('main');
+  const create = async (input: RoomInput, files: File[] = [], id: string = crypto.randomUUID()) => perform(async () => { const created = await api<Discussion>('/api/discussions', 'POST', attachmentBody({ id, input }, files)); setDetail(created); queryRef.current.selected = id; setSelected(id); setFolder("active"); setPage('main');
     if (input.kind === 'debate' && created.behaviorVersion === 3) await api(`/api/discussions/${id}`, 'PATCH', { confirmRoles: true, expectedVersion: created.room.configurationVersion });
     await operation(id, 'start'); });
   const runActions = async (action: HistoryAction, items: ManagementTarget[]) => {
@@ -152,7 +153,8 @@ export function App() {
     for (const item of items) {
       if (item.id === queryRef.current.selected && ['archive', 'trash'].includes(action)) {
         const draft = document.querySelector<HTMLTextAreaElement>('.composer textarea');
-        if (draft?.value.trim() && !window.confirm(translate('此對話有未送出的草稿。管理後將放棄草稿，是否繼續？'))) { failures.push(discussionName(item)); continue; }
+        const attachmentDraft = document.querySelector('.composer [data-has-attachments="true"]');
+        if ((draft?.value.trim() || attachmentDraft) && !window.confirm(translate('此對話有未送出的草稿。管理後將放棄草稿，是否繼續？'))) { failures.push(discussionName(item)); continue; }
       }
       try {
         if (action === 'delete') { await api('/api/discussions/' + item.id, 'DELETE', { operationId: crypto.randomUUID(), expectedSequence: item.sequence });
@@ -196,7 +198,7 @@ export function App() {
       <div className="workspace-page" hidden={page !== 'main'}>
         {!state && <header className="creation-header">{historyToggle}<span>{translate("本機工作空間")}</span>{controls}<button className="icon-button" onClick={openConnections}>{translate("連線")}</button></header>}
         <Suspense fallback={<div className="loading" role="status">{translate("正在載入討論室…")}</div>}>
-        {loading ? <div className="loading" role="status">{translate("正在載入討論室…")}</div> : state ? state.behaviorVersion === 3 ? <RoomView visible={page === 'main'} readingMode={readingMode} setReadingMode={setReadingMode} key={state.id + ":" + draftEpoch} state={state} progress={progress} busy={busy} perform={perform} panel={page === 'main' ? panel : null} setPanel={setPanel} historyToggle={historyToggle} controls={controls}/> : <DiscussionView visible={page === 'main'} readingMode={readingMode} setReadingMode={setReadingMode} key={state.id + ":" + draftEpoch} state={state} progress={progress} busy={busy} perform={perform} panel={page === 'main' ? panel : null} setPanel={setPanel} historyToggle={historyToggle} controls={controls} onFork={next => { setDetail(next); selectDiscussion(next.id); }}/>: <RoomNewDiscussion environment={environment} models={models} busy={busy} onCreate={create} onConnection={openConnections}/>}
+        {loading ? <div className="loading" role="status">{translate("正在載入討論室…")}</div> : state ? state.behaviorVersion === 3 ? state.kind === 'selection' ? <SelectionView key={state.id} state={state} progress={progress} busy={busy} perform={perform} historyToggle={historyToggle} controls={controls}/> : <RoomView visible={page === 'main'} readingMode={readingMode} setReadingMode={setReadingMode} key={state.id + ":" + draftEpoch} state={state} progress={progress} busy={busy} perform={perform} panel={page === 'main' ? panel : null} setPanel={setPanel} historyToggle={historyToggle} controls={controls}/> : <DiscussionView visible={page === 'main'} readingMode={readingMode} setReadingMode={setReadingMode} key={state.id + ":" + draftEpoch} state={state} progress={progress} busy={busy} perform={perform} panel={page === 'main' ? panel : null} setPanel={setPanel} historyToggle={historyToggle} controls={controls} onFork={next => { setDetail(next); selectDiscussion(next.id); }}/>: <RoomNewDiscussion environment={environment} models={models} busy={busy} onCreate={create} onConnection={openConnections}/>}
         </Suspense>
       </div>
       {page === 'connections' && <Suspense fallback={<div className="loading" role="status">{translate("正在載入連線與設定…")}</div>}><ConnectionsPage environment={environment} models={models} checking={checking} onCheck={() => void check()} onBack={() => { setPanel(null); setPage('main'); }} historyToggle={historyToggle} controls={controls}/></Suspense>}

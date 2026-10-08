@@ -4,6 +4,7 @@ import { plainSnippet } from './snippet.js';
 import { speakingTask } from './speakingTask.js';
 import type { RoomDiscussion, RoomMessage } from '../src/room-contract.js';
 import { MessageContent } from './MessageContent.js';
+import { AttachmentCards } from './Attachments.js';
 import { Icon } from './Icon.js';
 import { SeatAvatar } from './SeatAvatar.js';
 import { seatOf, userSeat, type SeatView } from './seats.js';
@@ -86,14 +87,15 @@ function Foldable({ children, text, mode }: { children: ReactNode; text: string;
   </>;
 }
 
-export function RoomMessage({ message: m, seats, messages, demo, proposalId, readingMode, canReply, onReply, jump }: {
+export function RoomMessage({ message: m, seats, messages, demo, proposalId, readingMode, canReply, onReply, jump, discussionId }: {
+  discussionId?: string;
   message: RoomMessage; seats: Seats; messages: RoomMessage[]; demo: boolean; proposalId: string | null; readingMode: 'full' | 'highlights';
   canReply: boolean; onReply: (message: RoomMessage) => void; jump: (id: string) => void;
 }) {
   const author = seatOf(seats, m.sender), user = m.sender === 'user', moderator = m.sender === 'moderator';
   const target = m.inReplyTo ? messages.find(other => other.id === m.inReplyTo && other.status === 'completed') : undefined, recipient = m.recipient !== 'all' ? seatOf(seats, m.recipient) : null;
   const cls = ['message', user && 'user', seatSkin(author, moderator), m.status !== 'completed' && 'cancelled'].filter(Boolean).join(' ');
-  const body = <MessageContent text={m.text || translate("（生成中止，沒有可保存的文字）")} plain={user} readingMode={readingMode}/>;
+  const body = m.text || !m.attachments?.length ? <MessageContent text={m.text || translate("（生成中止，沒有可保存的文字）")} plain={user} readingMode={readingMode}/> : null;
   return <article id={'message-' + m.id} tabIndex={-1} className={cls}>
     <SeatAvatar seat={author}/>
     <div className="message-main">
@@ -106,6 +108,7 @@ export function RoomMessage({ message: m, seats, messages, demo, proposalId, rea
       <div className="message-body">
         {target && <button className="source-jump" aria-label={translate("回應來源")} onClick={() => jump(target.id)}><b>↳ {seatOf(seats, target.sender).name}</b><span>{plainSnippet(target.text)}</span></button>}
         {user ? body : <Foldable text={m.text} mode={readingMode}>{body}</Foldable>}
+        {discussionId && m.attachments?.length ? <AttachmentCards discussionId={discussionId} attachments={m.attachments}/> : null}
         {m.status !== 'completed' && <p className="notice warning">{m.interruptedBy ? translate("主持人已中止發言") : translate("回覆未確認完成")}{" "}{translate("· 部分文字已保存，不作為完成回答或證據。")}</p>}
         <div className="actions"><button disabled={!canReply} onClick={() => onReply(m)}><Icon name="reply"/>{translate("引用")}</button><button onClick={() => void navigator.clipboard.writeText(m.text)}><Icon name="copy"/>{translate("複製")}</button></div>
       </div>

@@ -75,6 +75,65 @@ describe('conclusion delivery and independent review (deterministic, not semanti
   it('does not accept adequate=true when the review still lists missing requested content', async () => {
     const ctx = await setup(r => r.room!.proposal && r.room!.actor !== r.room!.proposal.author ? { type: 'confirm', proposalId: r.room!.proposal.id, review: { ...approved, gaps: ['Requested comparison missing.'] } } : proposal());
     const s = await ctx.run(); expect(s.room.outcome).toBeNull(); expect(s.room.proposal!.confirmed).toEqual(['codex']);
+    expect(ctx.requests.map(r => r.room!.actor)).toEqual(['codex', 'claude', 'claude', 'claude', 'claude']);
+    expect(s.pauseReason).toContain('審查判定仍矛盾');
+    expect(s.room.conclusionRequest).toMatchObject({ target: 'claude', kind: 'repair' });
+  });
+  it.each(['free', 'alternating'] as const)('clarifies a contradictory review with the reviewer and retains accepted limitations in %s flow', async flow => {
+    let reviews = 0;
+    const ctx = await setup(r => !r.room!.proposal ? { ...proposal(), unresolved: ['Uncertainty already disclosed.'] } as RoomControl['action'] :
+      { type: 'confirm', proposalId: r.room!.proposal.id, review: ++reviews === 1 ? { ...approved, gaps: ['Uncertainty already disclosed.'] } : approved }, { flow });
+    const s = await ctx.run(), records = await ctx.store.records(ctx.id);
+    const contradictory = records.find(r => r.state.room.proposal?.reviews?.some(v => v.gaps.length))!.state;
+    expect(contradictory.room.proposal!.confirmed).toEqual(['codex']); expect(contradictory.room.outcome).toBeNull();
+    expect(contradictory.room.proposal!.reviews![0]!.gaps).toEqual(['Uncertainty already disclosed.']);
+    expect(ctx.requests.map(r => r.room!.actor)).toEqual(['codex', 'claude', 'claude']);
+    const clarification = ctx.requests[2]!, prompt = JSON.parse(buildPrompt(clarification));
+    expect(clarification.room!.conclusionRequest).toMatchObject({ target: 'claude', kind: 'repair' });
+    expect(clarification.room!.task).toContain('Do not remove genuine gaps merely to finish');
+    expect(prompt.conclusionPolicy).toContain('adequate=true requires gaps=[]');
+    expect(prompt.deliveryControlExamples.map((e: RoomControl) => e.action)).toEqual([
+      expect.objectContaining({ type: 'confirm', proposalId: contradictory.room.proposal!.id, review: expect.objectContaining({ adequate: false }) }),
+      expect.objectContaining({ type: 'confirm', proposalId: contradictory.room.proposal!.id, review: expect.objectContaining({ adequate: true, gaps: [] }) }),
+    ]);
+    expect(s.room.proposal!.id).toBe(contradictory.room.proposal!.id); expect(s.room.proposal!.confirmed).toEqual(['codex', 'claude']);
+    expect(s.room.outcome?.unresolved).toEqual(['Uncertainty already disclosed.']); expect(s.room.conclusionRequest).toBeNull();
+    const reloaded = ctx.createController(); await reloaded.initialize(); expect(reloaded.get(ctx.id)).toEqual(s); await reloaded.close();
+  });
+  it('routes a clarified blocking gap to the author and requires fresh review of the replacement', async () => {
+    let reviews = 0;
+    const ctx = await setup(r => {
+      if (r.room!.actor === 'codex') return proposal(r.room!.proposal ? 'A revised answer containing the requested comparison.' : 'An answer missing the requested comparison.');
+      return { type: 'confirm', proposalId: r.room!.proposal!.id, review: ++reviews === 1 ? { ...approved, gaps: ['Requested comparison missing.'] } :
+        reviews === 2 ? { adequate: false, reason: 'The requested comparison is necessary.', gaps: ['Requested comparison missing.'] } : approved };
+    });
+    const s = await ctx.run();
+    expect(ctx.requests.map(r => r.room!.actor)).toEqual(['codex', 'claude', 'claude', 'codex', 'claude']);
+    expect(ctx.requests[3]!.room!.conclusionRequest).toMatchObject({ target: 'codex', kind: 'review' });
+    expect(ctx.requests[3]!.room!.proposal!.confirmed).toEqual(['codex']);
+    expect(ctx.requests[4]!.room!.proposal!.id).not.toBe(ctx.requests[2]!.room!.proposal!.id);
+    expect(s.room.outcome?.result).toContain('containing the requested comparison');
+  });
+  it('does not treat done or a prose-only clarification as review acceptance', async () => {
+    let reviews = 0;
+    const ctx = await setup(r => !r.room!.proposal ? proposal() : ++reviews === 1 ?
+      { type: 'confirm', proposalId: r.room!.proposal.id, review: { ...approved, gaps: ['Unresolved review classification.'] } } : { type: 'none' });
+    const s = await ctx.run();
+    expect(ctx.requests.map(r => r.room!.actor)).toEqual(['codex', 'claude', 'claude', 'claude', 'claude']);
+    expect(s.pauseReason).toContain('審查判定仍矛盾'); expect(s.room.outcome).toBeNull();
+    expect(s.room.proposal!.confirmed).toEqual(['codex']); expect(s.room.proposal!.reviews![0]!.gaps).toHaveLength(1);
+  });
+  it('preserves pending clarification across a manual boundary and reload without starting a call', async () => {
+    let reviews = 0;
+    const ctx = await setup(r => !r.room!.proposal ? proposal() : { type: 'confirm', proposalId: r.room!.proposal.id,
+      review: ++reviews === 1 ? { ...approved, gaps: ['A disclosed limitation.'] } : approved }, { mode: 'manual' });
+    const paused = await ctx.run(); expect(ctx.requests).toHaveLength(2);
+    expect(paused.room.conclusionRequest).toMatchObject({ target: 'claude', kind: 'repair' });
+    await ctx.controller.close(); const reloaded = ctx.createController(); await reloaded.initialize();
+    expect(ctx.requests).toHaveLength(2); expect(reloaded.get(ctx.id)).toEqual(paused);
+    await reloaded.start(ctx.id, randomUUID()); await reloaded.wait(ctx.id);
+    expect(ctx.requests[2]!.room!.actor).toBe('claude'); expect(reloaded.get(ctx.id).room.interimResults).toHaveLength(1);
+    await reloaded.close();
   });
   it.each<ConclusionDelivery['kind']>(['answer', 'disagreement', 'undetermined'])('allows a complete %s response with honest reservations', async kind => {
     const ctx = await setup(r => r.room!.proposal ? { type: 'confirm', proposalId: r.room!.proposal.id, review: approved } : { type: 'propose', result: 'The requested answer, including the basis for its remaining uncertainty or distinct positions.', delivery: { ...delivery, kind }, dissent: ['A retained position.'], unresolved: ['A nonblocking limitation.'] });

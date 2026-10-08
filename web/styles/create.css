@@ -32,6 +32,26 @@
 .step-no{display:grid;place-items:center;width:24px;height:24px;border-radius:50%;background:var(--accent-soft);color:var(--accent);font-size:12px;font-weight:700;font-variant-numeric:tabular-nums}
 .cf-heading small{margin-left:auto;color:var(--muted);font-size:var(--text-caption);font-weight:500;font-variant-numeric:tabular-nums}
 
+/* Optional scenarios prefill the existing form; selecting one never starts a discussion. */
+.scenario-picker{margin:0 0 20px;padding:18px;border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--surface)}
+.scenario-heading{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;margin-bottom:16px}
+.scenario-heading h3{margin:0;font-size:14px;font-weight:650}
+.scenario-heading>span{color:var(--muted);font-size:var(--text-caption)}
+.scenario-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.scenario-grid .scenario-card{display:flex;flex-direction:column;align-items:flex-start;gap:7px;min-width:0;min-height:116px;padding:14px;text-align:left;border-color:transparent;background:var(--surface-soft);box-shadow:none}
+.scenario-card .icon{width:18px;height:18px;color:var(--muted)}
+.scenario-card strong{font-size:14px;font-weight:600;overflow-wrap:anywhere}
+.scenario-card>span{color:var(--muted);font-size:var(--text-caption)}
+.scenario-grid .scenario-card[aria-pressed=false]:hover:not(:disabled){border-color:var(--line-strong);background:var(--hover)}
+.scenario-grid .scenario-card[aria-pressed=true]{border-color:var(--accent-line);background:var(--accent-soft)}
+.scenario-card[aria-pressed=true] .icon{color:var(--accent-strong)}
+.scenario-picker>p{margin:16px 0 0;padding-top:14px;border-top:1px solid var(--line);color:var(--muted);font-size:var(--text-caption)}
+.scenario-summary{display:flex;flex-direction:column;gap:8px;margin-top:16px;padding-top:16px;border-top:1px solid var(--line);overflow-wrap:anywhere}
+.scenario-summary>span,.scenario-summary>p,.scenario-summary>small{margin:0;color:var(--muted);font-size:var(--text-caption)}
+.scenario-missing{margin:0;padding-left:20px;font-size:var(--text-caption)}
+.scenario-actions{display:flex;flex-wrap:wrap;gap:8px}
+.scenario-actions button{min-width:0;white-space:normal;scroll-margin-block:24px 240px}
+
 /* Topic: one generous writing surface with a faint wash of the accent. */
 .cf-stage{padding:18px 20px 0;border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--stage-tint),var(--surface);box-shadow:var(--inner-highlight),var(--elev-2);transition:border-color var(--dur-2) var(--ease-out),box-shadow var(--dur-3) var(--ease-out)}
 .cf-stage:focus-within{border-color:var(--accent-line);box-shadow:var(--inner-highlight),var(--elev-2),0 0 0 4px var(--accent-glow)}
@@ -138,6 +158,7 @@
   .cf-hero{margin-bottom:22px}
   .cf-hero h1{font-size:24px}
   .cf-seats,.cf-rules{grid-template-columns:1fr}
+  .scenario-grid{grid-template-columns:1fr}
   .cf-stage{padding:14px 16px 0}
   .cf-stage-foot{margin-inline:-16px;padding-inline:16px}
   .host-settings{grid-template-columns:1fr}

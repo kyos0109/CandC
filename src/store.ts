@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { AppError, discussionStateSchema, runEventSchema, type Discussion, type RunEvent } from './domain.js';
 import { withJournalLock } from './journal-lock.js';
 import { folderOf } from './management.js';
+import { AttachmentStore } from './attachments.js';
 
 const idSchema = z.uuid();
 const deletionSuffix = /^(jsonl|unconfirmed\.json|jsonl\.compacting|jsonl\.(?:backup|recovery)-\d+\.gz)$/;
@@ -15,12 +16,13 @@ class JournalVersionConflict extends AppError {
   constructor() { super('IDEMPOTENCY_CONFLICT', 'An existing journal cannot change behavior version.', 409); }
 }
 export class DiscussionStore<T extends JournalDiscussion = Discussion> {
+  readonly attachments: AttachmentStore;
   private readonly latest = new Map<string, T>();
   private readonly blocked = new Map<string, { reason: string; pending?: PendingCommit }>();
   private readonly deleted = new Set<string>();
   private readonly deletionMarkers = new Map<string, { fingerprint: string; expectedSequence: number }>();
   constructor(private readonly directory: string, private readonly fault?: StorageFault,
-    private readonly stateContract: z.ZodType<T> = discussionStateSchema as unknown as z.ZodType<T>) {}
+    private readonly stateContract: z.ZodType<T> = discussionStateSchema as unknown as z.ZodType<T>) { this.attachments = new AttachmentStore(directory); }
   private typed(state: JournalDiscussion): T { return this.stateContract.parse(state); }
   storageIssues() { return [...this.blocked].map(([id, issue]) => ({ id, reason: issue.reason })); }
   isBlocked(id: string) { return this.blocked.has(id); }
@@ -64,7 +66,7 @@ export class DiscussionStore<T extends JournalDiscussion = Discussion> {
             marker = { fingerprint, expectedSequence: parsed.expectedSequence };
             this.deletionMarkers.set(id, marker);
           }
-          if (remaining.has(id)) return { id, reason: 'Deletion is incomplete. Retry permanent deletion.', expectedSequence: marker.expectedSequence };
+          if (remaining.has(id) || (await this.attachments.names(id)).length) return { id, reason: 'Deletion is incomplete. Retry permanent deletion.', expectedSequence: marker.expectedSequence };
         } catch {
           this.deletionMarkers.delete(id);
           return { id, reason: 'Deletion marker is unconfirmed. Preserve the files for inspection.' };
@@ -105,6 +107,7 @@ export class DiscussionStore<T extends JournalDiscussion = Discussion> {
       try { await this.fault?.('deleteMarkerSync', handle, ''); await handle.sync(); }
       finally { await handle.close(); await this.fault?.('deleteMarkerClose', handle, ''); }
       this.latest.delete(id); this.blocked.delete(id);
+      await this.attachments.remove(id);
       for (const name of this.deletionFiles(id, await readdir(this.directory))) {
         const file = path.resolve(this.directory, name);
         if (path.dirname(file) !== path.resolve(this.directory)) throw new AppError('INVALID_STATE', 'Deletion path escaped the history directory.');

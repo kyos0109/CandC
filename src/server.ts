@@ -1,3 +1,4 @@
+import { selectionMarkdown } from './selection.js';
 import { registerEventStream } from './event-stream.js';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import Fastify from 'fastify';
@@ -11,10 +12,14 @@ import { safeError } from './redaction.js';
 import fastifyStatic from '@fastify/static';
 import { stat } from 'node:fs/promises';
 import { diagnose, codexCatalog, roomProviderStatuses, type EnvironmentStatus } from './environment.js';
+import multipart from '@fastify/multipart';
+import { attachmentLimits } from './attachment-contract.js';
+import { withUpload, prepareAttachments, AttachmentUploadError } from './attachment-upload.js';
+import { redact } from './redaction.js';
 
 const idParams = z.object({ id: z.uuid() });
 const operationBody = z.object({ operationId: z.uuid() }).strict();
-const messageBody = z.object({ messageId: z.uuid(), text: z.string().trim().min(1).max(32_000),
+const messageBody = z.object({ messageId: z.uuid(), text: z.string().trim().max(32_000),
   inReplyTo: z.uuid().nullable().default(null),
   recipient: z.union([participantSchema, z.literal('both'), z.literal('all')]).default('both') }).strict();
 
@@ -22,6 +27,8 @@ export function createServer(controller: DiscussionController | DiscussionServic
   webRoot?: string; environment?: () => Promise<EnvironmentStatus>; models?: typeof codexCatalog; testFixture?: boolean; instanceId?: string } = {}) {
   const token = options.accessToken ?? randomBytes(32).toString('hex');
   const server = Fastify({ logger: false, bodyLimit: 128 * 1024, requestTimeout: 30_000 });
+  server.register(multipart, { preservePath: true, limits: { files: attachmentLimits.files, fields: 1, parts: attachmentLimits.files + 1,
+    fileSize: attachmentLimits.fileBytes, fieldSize: 128 * 1024, fieldNameSize: 100 }, throwFileSizeLimit: false });
 
   server.addHook('onRequest', async (request, reply) => {
     const host = request.headers.host ?? '';
@@ -40,6 +47,8 @@ export function createServer(controller: DiscussionController | DiscussionServic
   });
 
   server.setErrorHandler((error, _request, reply) => {
+    if (error instanceof Error && 'code' in error && ['FST_FILES_LIMIT', 'FST_PARTS_LIMIT', 'FST_REQ_FILE_TOO_LARGE'].includes(String(error.code))) return reply.code(413).send({ error: 'ATTACHMENT_SIZE' });
+    if (error instanceof AttachmentUploadError) return reply.code(error.statusCode).send({ error: error.code, fileName: redact(error.fileName).slice(0, 240) });
     if (error instanceof ZodError) return reply.code(400).send({ error: 'INVALID_INPUT', message: 'Request does not match the API contract.' });
     if (error instanceof AppError) return reply.code(error.statusCode).send({ error: error.code, message: safeError(error) });
     const status = error instanceof Error && 'statusCode' in error && typeof error.statusCode === 'number' && error.statusCode < 500 ? error.statusCode : 500;
@@ -92,14 +101,15 @@ export function createServer(controller: DiscussionController | DiscussionServic
     return controller.performanceBaseline(format);
   });
   server.get('/api/storage-issues', async () => controller.storageIssues());
-  server.post('/api/discussions', async (request, reply) => {
-    const body = z.object({ id: z.uuid(), input: z.union([discussionInputSchema, roomInputSchema]) }).strict().parse(request.body);
+  server.post('/api/discussions', async (request, reply) => withUpload(request, async (payload, files) => {
+    const body = z.object({ id: z.uuid(), input: z.union([discussionInputSchema, roomInputSchema]) }).strict().parse(payload);
+    if (files.length && (body.input.behaviorVersion !== 3 || body.input.kind === 'selection')) throw new AppError('ATTACHMENT_UNSUPPORTED', 'Attachments require a version 3 discussion or debate.', 400);
     if (body.input.behaviorVersion === 3) {
       if (!(controller instanceof DiscussionService)) throw new AppError('BACKEND_UNAVAILABLE', 'Version 3 controller unavailable.');
-      return reply.code(201).send(await controller.createRoom(body.id, body.input));
+      return reply.code(201).send(await controller.createRoom(body.id, body.input, undefined, await prepareAttachments(files)));
     }
     return reply.code(201).send(await controller.create(body.id, body.input));
-  });
+  }));
   server.get('/api/discussions/:id', async (request) => controller.get(idParams.parse(request.params).id));
   server.patch('/api/discussions/:id/display-name', async request => {
     const { id } = idParams.parse(request.params);
@@ -170,11 +180,14 @@ export function createServer(controller: DiscussionController | DiscussionServic
     const state = controller.get(idParams.parse(request.params).id);
     const format = z.object({ format: z.enum(['json', 'markdown']).default('markdown') }).parse(request.query).format;
     reply.header('Content-Disposition', `attachment; filename="candc-${state.id}.${format === 'json' ? 'json' : 'md'}"`);
-    if (format === 'json') return state;
+    const attachments = state.behaviorVersion === 3 && controller instanceof DiscussionService ? await controller.rooms.attachmentExport(state.id) : [];
+    if (format === 'json') return attachments.length ? { ...state, attachmentContents: attachments } : state;
     reply.type('text/markdown; charset=utf-8');
     return `# ${state.topic}\n\nBackend: ${state.backend}\nStatus: ${state.status}\n\n` +
       state.messages.map((message) => `## ${message.sender} → ${message.recipient} · round ${message.round} · ${message.purpose ?? 'discussion'} · ${message.status}\n\n${message.text}`).join('\n\n') +
+      (attachments.length ? '\n\n## Attachments\n\n' + attachments.map(a => `### ${a.name} (${a.id})\n\nMessage: ${a.messageId}; recipient: ${a.recipient}; SHA256: ${a.sha256}; text SHA256: ${a.textSha256}; warnings: ${a.warnings.join(', ')}\n\n${a.text}`).join('\n\n') : '') +
       '\n\n## Evidence\n\n' + state.evidence.map((item) => `- ${item.source} (${item.retrievedAt}, SHA256 ${item.sha256}, truncated=${item.truncated})`).join('\n') +
+      (state.behaviorVersion === 3 && state.room.selection ? selectionMarkdown(state.room.selection) : '') +
       (state.behaviorVersion === 3 ? '\n\n## Moderation, topic changes and outcome\n\n```json\n' + JSON.stringify({ commands: state.room.commands, topicHistory: state.room.topicHistory, outcome: state.room.outcome, interimResults: state.room.interimResults, workflow: state.room.workflow }, null, 2) + '\n```' : state.v2 ? '\n\n## Issues and result limits\n\n' + state.v2.issues.map(i => `- ${i.title}: ${i.status}; ${i.result}; unresolved: ${i.unresolved.join('; ')}`).join('\n') +
         '\n\n## Call diagnostics\n\n```json\n' + JSON.stringify(state.v2.calls, null, 2) + '\n```' : '');
   });
@@ -184,13 +197,24 @@ export function createServer(controller: DiscussionController | DiscussionServic
     reply.send({ stopping: true });
     setImmediate(() => void server.close());
   });
-  server.post('/api/discussions/:id/messages', async (request) => {
+  server.get('/api/discussions/:id/attachments/:attachmentId/:kind', async (request, reply) => {
+    const { id, attachmentId, kind } = z.object({ id: z.uuid(), attachmentId: z.uuid(), kind: z.enum(['original', 'text']) }).parse(request.params);
+    if (!(controller instanceof DiscussionService)) throw new AppError('NOT_FOUND', 'Attachment not found.', 404);
+    const { attachment, bytes } = await controller.rooms.attachment(id, attachmentId, kind);
+    if (kind === 'text') return reply.send({ attachment, text: bytes.toString('utf8') });
+    reply.header('Content-Disposition', `attachment; filename="attachment"; filename*=UTF-8''${encodeURIComponent(attachment.name).replace(/['()*]/g, c => '%' + c.charCodeAt(0).toString(16))}`);
+    return reply.type('application/octet-stream').send(bytes);
+  });
+  server.post('/api/discussions/:id/messages', async (request) => withUpload(request, async (payload, files) => {
     const { id } = idParams.parse(request.params);
-    const body = messageBody.parse(request.body);
-    if (controller instanceof DiscussionService) return controller.send(id, body.messageId, body.text, body.recipient, body.inReplyTo);
+    const body = messageBody.parse(payload);
+    if (!body.text && !files.length) throw new AppError('INVALID_INPUT', 'A message needs text or an attachment.', 400);
+    const state = controller.get(id);
+    if (files.length && (state.behaviorVersion !== 3 || state.kind === 'selection')) throw new AppError('ATTACHMENT_UNSUPPORTED', 'Attachments require a version 3 discussion or debate.', 400);
+    if (controller instanceof DiscussionService) return controller.send(id, body.messageId, body.text, body.recipient, body.inReplyTo, await prepareAttachments(files));
     const recipient = z.union([agentIdSchema, z.literal('both')]).parse(body.recipient);
     return controller.send(id, body.messageId, body.text, recipient, body.inReplyTo);
-  });
+  }));
   const closeStreams = registerEventStream(server, controller, options);
 
   server.addHook('preClose', async () => {

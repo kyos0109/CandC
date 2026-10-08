@@ -21,7 +21,8 @@ owns exact scheduling, privacy and storage rules. Version 1/2 histories retain t
 3. Configure 2–4 speakers. Each seat has an independent session and workspace. Two seats
    may use the same provider without sharing private input or native sessions. Live seats
    require available, explicitly selected model/effort settings.
-4. Choose joint analysis or debate. Joint analysis allows empty stance fields. Debate
+4. Choose **Collaborative analysis** or **Debate**. Collaborative analysis allows
+   empty stance fields. Debate
    requires an explicit position for each seat and confirmation before execution; justified
    revisions remain possible. Optional persona belongs to that seat.
 5. Choose manual, automatic or until-conclusion execution. Set speaking order and inspect
@@ -32,6 +33,59 @@ owns exact scheduling, privacy and storage rules. Version 1/2 histories retain t
 Only one discussion can be active at a time. CLI processes launch on demand; you do not
 need to leave their terminals running. Gemini/Grok live paths remain locked, even though
 their fake seats can appear in Demo. See the [provider table](../README.md#provider-support-and-practical-limits).
+
+## Start from an optional scenario
+
+Above the topic, choose a scenario to prefill a goal and role tasks for your current
+2–4 speakers. You can keep creating a discussion without choosing any scenario.
+
+| Scenario | Purpose | Suggested execution |
+| --- | --- | --- |
+| Decision Lab | Compare options and produce a decision record with trade-offs, risks and uncertainty. | Until conclusion |
+| Engineering Review | Review architecture, reliability, security, performance and validation methods. | Until conclusion |
+| Research Council | Compare claims, evidence, sources and unresolved disagreements. | Until conclusion |
+| Incident War Room | Reconstruct an incident and examine causes, mitigation and recovery. | Manual |
+| Code Review Board | Review supplied code or diffs with concrete findings and regression suggestions. | Until conclusion |
+| Simulation Arena | Explore supplied roles and scenarios, clearly labeling hypothetical results. | Manual |
+
+**Keep customizing after selection.** Goals, role names/tasks, discussion form,
+execution mode and all other settings remain editable. Switching or reapplying a
+scenario preserves fields you edited, including text you deliberately cleared.
+The card indicates the last applied scenario, not a locked or exact configuration.
+Click the same card again to fill unedited fields after adding or removing seats.
+Cards are temporarily disabled until a pending seat removal finishes.
+Seat presets still replace the seat configuration; reapply the scenario afterward
+if you want its roles on the new seats. Neither operation adds seats on behalf of
+the scenario.
+
+Scenarios do not change providers, models, effort, moderator authority, research,
+limits, attachments or response mode. Research Council does not enable web research;
+enable it separately if needed. Code and incident reviews use supplied material
+and any separately authorized research; they do not independently connect to your
+systems. Decision Lab does not score or rank options.
+
+Scenario cards are disabled while **Option evaluation / 選項評選** is selected.
+Set **Discussion format** to **Collaborative analysis** or **Debate** first.
+Switching to option evaluation keeps the goal and role text; review them before
+starting the evaluation. A debate still requires each seat's explicit
+support/opposition choice. Switching interface
+language translates controls but preserves inserted goals and role text, including
+when reapplying the same card. Choosing a different scenario uses the current
+interface language for fields that you have not edited.
+
+The scenario summary shows the current discussion settings, which template fields
+you customized, and every seat or moderator that still needs connection or model
+settings. Use **Go to seats and moderator** to complete them. Applying a scenario
+does not select a model or reasoning effort for you.
+
+Use **Reset to template defaults** when you explicitly want to replace customized
+goals, discussion form, execution mode and role text. It uses the selected scenario's
+original language snapshot and leaves all other settings alone. **Undo reset**
+restores those fields and their edit protection, including deliberate empty text.
+Repeated resets retain the original undo point. Editing a managed field, changing
+seats or applying a scenario clears undo; changing the interface language or other
+settings does not. Reset and undo are unavailable during creation, pending seat
+removal and option evaluation.
 
 ## Choose execution and moderator authority
 

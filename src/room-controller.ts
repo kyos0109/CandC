@@ -13,6 +13,9 @@ import { PerformanceStore, type Measurement, type PerformanceObserver, type Perf
 import { emptyWorkflow, continuationTask, runnableTasks, updateWorkflow } from './discussion-policy.js';
 import { deliveryProblem, type ConclusionDelivery } from './conclusion.js';
 import { RpcRejectionError } from './adapters/process.js';
+import { emptySelection, isSelectionCall, acceptSelection, selectionRanking } from './selection.js';
+import { attachmentFingerprint, type PreparedAttachment } from './attachments.js';
+import { sentenceProblem } from './single-sentence.js';
 
 const savedDelivery = (delivery?: ConclusionDelivery) => delivery ? { ...delivery, basis: delivery.basis.map(value => redact(value)) } : undefined;
 
@@ -96,26 +99,33 @@ export class RoomController {
       }
     }
   }
-  async create(id: string, input: RoomInput, history?: InitialRoomHistory) {
+  async create(id: string, input: RoomInput, history?: InitialRoomHistory, files: PreparedAttachment[] = []) {
     return this.exclusive(async () => {
       await this.store.assertAvailable(id);
       const parsed = roomInputSchema.parse(input);
+      this.assertStorage(id);
+      if (files.length && (parsed.kind === 'selection' || history)) throw new AppError('ATTACHMENT_UNSUPPORTED', 'Attachments require a version 3 discussion or debate.', 400);
       const normalized: RoomInput = { ...parsed, topic: redact(parsed.topic), goal: redact(parsed.goal.trim() || parsed.topic), constraints: redact(parsed.constraints),
         participants: parsed.participants.map(p => ({ ...p, instructions: redact(p.instructions) })), roots: await validateRoots(parsed.roots),
         ...(parsed.displayName === undefined ? {} : { displayName: redact(parsed.displayName) }) };
-      const fingerprint = JSON.stringify(history ? { input: normalized, historyHash: createHash('sha256').update(JSON.stringify(history)).digest('hex') } : normalized);
+      const fingerprint = JSON.stringify(history ? { input: normalized, historyHash: createHash('sha256').update(JSON.stringify(history)).digest('hex') } : files.length ? { input: normalized, attachments: attachmentFingerprint(files) } : normalized);
       if (this.has(id)) {
         const s = this.get(id); if (s.room.operations[0]?.fingerprint !== fingerprint) throw new AppError('IDEMPOTENCY_CONFLICT', 'Discussion ID already used.'); return s;
       }
       const at = new Date().toISOString();
+      const attachments = await this.store.attachments.save(id, files);
       const state: RoomDiscussion = { ...normalized, id, status: 'ready', sequence: 0, round: 1, elapsedMs: history?.elapsedMs ?? 0, createdAt: at, pauseReason: null,
         rolesConfirmed: normalized.kind !== 'debate', activity: null, evidence: [],
-        messages: history?.messages ?? [{ id: randomUUID(), sender: 'user', recipient: 'all', text: normalized.topic, round: 0, inReplyTo: null, status: 'completed', createdAt: at, purpose: 'discussion', taskVersion: 1 }],
+        messages: history?.messages ?? [{ id: randomUUID(), sender: 'user', recipient: 'all', text: normalized.topic, round: 0, inReplyTo: null, status: 'completed', createdAt: at, purpose: 'discussion', taskVersion: 1, ...(attachments.length ? { attachments } : {}) }],
         room: { taskVersion: 1, configurationVersion: 1, deliveryVersion: 1, conclusionRequest: null, currentSpeaker: null, contributions: 0, moderatorCalls: 0, muted: [], grant: null,
           sessions: {}, calls: [], commands: [], pendingTopic: null, topicHistory: [{ title: normalized.topic, version: 1, reason: 'Original topic' }],
           outcome: null, proposal: null, operations: [{ id, fingerprint }], sourceDiscussionId: history?.sourceDiscussionId ?? null, uncertainBudgetMs: 0,
+          ...(normalized.kind === 'selection' ? { selection: emptySelection() } : {}),
           ...(normalized.discussionPolicyVersion === 1 ? { workflow: emptyWorkflow() } : {}) } };
-      this.states.set(id, state); await this.commit(state, 'created', { backend: state.backend, behaviorVersion: 3 }); return this.get(id);
+      this.states.set(id, state);
+      try { await this.commit(state, 'created', { backend: state.backend, behaviorVersion: 3 }); }
+      catch (error) { if (!this.store.isBlocked(id)) { this.states.delete(id); await this.store.attachments.remove(id, attachments); } throw error; }
+      return this.get(id);
     });
   }
   async start(id: string, operationId: string, purpose: 'discussion' | 'summary' | 'roles' = 'discussion') {
@@ -124,6 +134,8 @@ export class RoomController {
     try { return await this.exclusive(async () => {
       assertEditable(this.get(id));
       const state = this.get(id); this.assertStorage(id);
+      if (state.kind === 'selection' && purpose !== 'discussion') throw new AppError('INVALID_STATE', 'Selection does not support discussion summaries or roles.');
+      if (state.room.selection?.phase === 'complete') return state;
       if (purpose === 'roles') throw new AppError('INVALID_STATE', 'Version 3 uses explicit participant positions.');
       const fingerprint = JSON.stringify({ action: 'start', purpose });
       if (this.repeated(state, operationId, fingerprint)) return state;
@@ -138,7 +150,7 @@ export class RoomController {
       if (!state.rolesConfirmed) throw new AppError('ROLES_REQUIRED', '請確認所有發言者的立場。');
       if (state.room.pendingTopic) throw new AppError('PENDING_TOPIC', '確認尚未套用的改題通知後才能續談。');
       if (state.elapsedMs >= state.limits.maxDurationMs) throw new AppError('TIME_LIMIT', 'Duration limit reached.');
-      if (purpose === 'discussion' && state.room.contributions >= state.limits.maxRounds * state.participants.length) throw new AppError('ROUND_LIMIT', 'Round limit reached.');
+      if (state.kind !== 'selection' && purpose === 'discussion' && state.room.contributions >= state.limits.maxRounds * state.participants.length) throw new AppError('ROUND_LIMIT', 'Round limit reached.');
       if (state.moderator && isJudge(state) && state.room.moderatorCalls >= state.limits.maxModeratorCalls) throw new AppError('MODERATOR_LIMIT', '主持人呼叫已達上限，請調整後續談。');
       const versions = state.backend === 'live' ? await this.preflight(state, measurement?.mark) : undefined;
       if (measurement && versions) measurement.record.cliVersions = { codex: versions.codex ?? null, claude: versions.claude ?? null };
@@ -180,6 +192,8 @@ export class RoomController {
   private elapsed(runtime: Runtime) { return runtime.initialElapsed + Date.now() - runtime.startedAt; }
   private async call(id: string, runtime: Runtime, actor: ParticipantId, purpose: RoomCall['purpose'], task: string,
     draft: RoomCall['draft'] = null, onDelta?: (text: string) => void, signal?: AbortSignal, fresh = false, openingSpeaker?: ParticipantId): Promise<CallResult> {
+    const selectionCall = isSelectionCall(purpose);
+    if (selectionCall) fresh = true;
     const initial = this.get(id), participant = actor === 'moderator' ? initial.moderator! : initial.participants.find(p => p.id === actor)!;
     const callId = randomUUID();
     const measurement = this.performance.begin({ kind: 'turn', discussionId: id, executionId: runtime.executionId, requestId: callId, backend: initial.backend,
@@ -195,7 +209,13 @@ export class RoomController {
       const participant = actor === 'moderator' ? s.moderator! : s.participants.find(p => p.id === actor)!;
       if (!participant) throw new AppError('INVALID_REFERENCE', 'Unknown participant.');
       const session = fresh ? undefined : this.sessionFor(s, actor);
-      const eligible = this.eligible(s, actor), messages = eligible.filter(m => !session?.delivered.includes(m.id));
+      const eligible = selectionCall ? [] : this.eligible(s, actor), pending = eligible.filter(m => !session?.delivered.includes(m.id));
+      // Reject obviously oversized histories before loading files; keep original-file reads bounded.
+      if (pending.some(m => m.attachments?.length) && JSON.stringify(pending).length + pending.reduce((n, m) => n + (m.attachments ?? []).reduce((sum, a) => sum + a.characters, 0), 0) > 1_000_000)
+        throw new AppError('CONTEXT_LIMIT', 'Input exceeds limit; no history was truncated.');
+      const messages: NonNullable<TurnRequest['room']>['messages'] = [];
+      for (const { attachments, ...m } of pending) messages.push({ ...m,
+        ...(attachments ? { attachments: await this.store.attachments.hydrate(id, attachments) } : {}) });
       const generation = session?.generation ?? randomUUID();
       const workspace = path.resolve('.cache/agents/rooms', id, actor, generation);
       const timeoutMs = Math.min(s.limits.turnTimeoutMs, remaining);
@@ -207,9 +227,11 @@ export class RoomController {
         evidence: actor === 'moderator' ? [] : s.evidence.filter(e => !e.owner || e.owner === actor).map(({ owner: _, ...e }) => e),
         untilConclusion: s.mode === 'conclusion',
         room: { actor, provider: participant.provider, taskVersion: s.room.taskVersion, grantId: draft ? runtime.turn?.grantId ?? null : s.room.grant?.id ?? null,
+          ...(selectionCall ? { selection: { optionCount: s.selection!.optionCount, optionSet: s.room.selection!.optionSet } } : {}),
           ...(openingSpeaker ? { openingSpeaker } : {}),
           deliveryVersion: s.room.deliveryVersion, conclusionRequest: s.room.conclusionRequest,
           moderatorMode: s.moderatorMode ?? 'facilitator', discussionKind: s.kind,
+          ...(s.singleSentence ? { singleSentence: true } : {}),
           execution: { mode: s.mode, researchEnabled: s.research, researchAvailable: s.research && purpose === 'discussion',
             policyVersion: s.discussionPolicyVersion ?? null, currentTaskKey: purpose === 'discussion' ? s.room.grant?.taskKey ?? null : null },
           ...(s.room.workflow ? { workflow: s.room.workflow } : {}),
@@ -223,6 +245,7 @@ export class RoomController {
         taskVersion: s.room.taskVersion, grantId: request.room!.grantId, purpose, messages: messages.map(m => m.id), topic: s.topic, goal: s.goal, constraints: s.constraints,
         ...(openingSpeaker ? { openingSpeaker } : {}),
         task: request.room!.task, settings: participant.settings, payloadHash: createHash('sha256').update(payload).digest('hex'), characters: payload.length,
+        ...(messages.some(m => m.attachments?.length) ? { attachments: messages.flatMap(m => (m.attachments ?? []).map(a => ({ id: a.id, textSha256: a.textSha256 }))) } : {}),
         draft, status: 'prepared', startedAt: new Date().toISOString(), durationMs: null, usage: null, reservationMs: timeoutMs, references: [] };
       measurement?.mark('preparedStart');
       await this.commit({ ...s, room: { ...s.room, moderatorCalls: s.room.moderatorCalls + (actor === 'moderator' ? 1 : 0), calls: [...s.room.calls, c] } }, 'state', { preparedCall: c.id, participant: actor });
@@ -235,38 +258,61 @@ export class RoomController {
     try {
       request.signal.throwIfAborted(); await mkdir(prepared.workspace, { recursive: true });
       const adapter = this.factory(call.provider, prepared.workspace, this.get(id).backend, actor);
-      for await (const event of adapter.run(request)) {
+      for (let attempt = 0; ; attempt++) {
         request.signal.throwIfAborted();
-        if (event.type === 'session') {
-          if (native || event.session.backend !== this.get(id).backend || request.session && request.session.id !== event.session.id) throw new AppError('SESSION_MISMATCH', 'Session differs from its owned request.');
-          native = event.session;
-          if (measurement) measurement.record.model = event.session.model;
-          await this.exclusive(async () => {
-            const s = this.get(id); this.assertStorage(id);
-            if (s.room.calls.some(c => c.id !== call.id && c.provider === call.provider && c.participant !== actor && c.nativeSessionId === native!.id)) throw new AppError('SESSION_MISMATCH', 'Provider reused another participant session.');
-            await this.commit({ ...s, room: { ...s.room, calls: s.room.calls.map(c => c.id === call.id ? { ...c, nativeSessionId: native!.id } : c) } }, 'session', { provisional: true, callId: call.id, participant: actor });
-          });
-        } else if (event.type === 'delta') {
-          partial += event.text; if (partial.length > 500_000) throw new AppError('OUTPUT_LIMIT', 'Response exceeded limit.');
-          if (roomPreview(partial).trim()) measurement?.text('stream');
-          onDelta?.(redact(roomPreview(partial)));
-          if (purpose !== 'monitor') this.progress(id, { speaker: actor, preview: redact(roomPreview(partial)), characters: partial.length, turnId: call.id });
-        } else if (event.type === 'completed') {
-          if (final !== null || !native || event.model !== native.model) throw new AppError('INVALID_PROTOCOL', 'Invalid final result.');
-          final = event.text; call.usage = event.usage ?? null;
-          measurement?.usage(event.usage, event.performanceUsage);
-          if (roomPreview(final).trim()) measurement?.text('final-only');
-        } else if (event.type === 'evidence') {
-          if (!request.research) throw new AppError('UNEXPECTED_TOOLS', 'Research is disabled.');
-          call.researchPerformed = true;
-          await this.exclusive(async () => { const s = this.get(id); await this.commit({ ...s, evidence: [...s.evidence, { ...event.evidence, owner: actor, generation: call.generation }] }, 'evidence', { participant: actor }); });
-        } else if (event.type === 'tool') {
-          if (!request.research) throw new AppError('UNEXPECTED_TOOLS', 'Tools outside the policy.');
-          call.researchPerformed = true;
-          if (measurement && (!event.toolId || !toolIds.has(event.toolId))) { measurement.record.tools++; if (event.toolId) toolIds.add(event.toolId); }
+        for await (const event of adapter.run(request)) {
+          request.signal.throwIfAborted();
+          if (event.type === 'session') {
+            if (native || event.session.backend !== this.get(id).backend || request.session && request.session.id !== event.session.id) throw new AppError('SESSION_MISMATCH', 'Session differs from its owned request.');
+            native = event.session;
+            if (measurement) measurement.record.model = event.session.model;
+            await this.exclusive(async () => {
+              const s = this.get(id); this.assertStorage(id);
+              if (s.room.calls.some(c => c.id !== call.id && c.provider === call.provider && (selectionCall || c.participant !== actor) && c.nativeSessionId === native!.id)) throw new AppError('SESSION_MISMATCH', 'Provider reused another participant session.');
+              await this.commit({ ...s, room: { ...s.room, calls: s.room.calls.map(c => c.id === call.id ? { ...c, nativeSessionId: native!.id } : c) } }, 'session', { provisional: true, callId: call.id, participant: actor });
+            });
+          } else if (event.type === 'delta') {
+            partial += event.text; if (partial.length > 500_000) throw new AppError('OUTPUT_LIMIT', 'Response exceeded limit.');
+            if (roomPreview(partial).trim()) measurement?.text('stream');
+            if (!initial.singleSentence) onDelta?.(redact(roomPreview(partial)));
+            if (purpose !== 'monitor') this.progress(id, { speaker: actor, preview: initial.singleSentence ? '' : redact(roomPreview(partial)), characters: partial.length, turnId: call.id });
+          } else if (event.type === 'completed') {
+            if (final !== null || !native || event.model !== native.model) throw new AppError('INVALID_PROTOCOL', 'Invalid final result.');
+            final = event.text;
+            if (event.usage) { call.usage ??= {}; for (const [key, value] of Object.entries(event.usage)) call.usage[key] = (call.usage[key] ?? 0) + value; }
+            measurement?.usage(event.usage, event.performanceUsage);
+            if (roomPreview(final).trim()) measurement?.text('final-only');
+          } else if (event.type === 'evidence') {
+            if (!request.research) throw new AppError('UNEXPECTED_TOOLS', 'Research is disabled.');
+            call.researchPerformed = true;
+            await this.exclusive(async () => { const s = this.get(id); await this.commit({ ...s, evidence: [...s.evidence, { ...event.evidence, owner: actor, generation: call.generation }] }, 'evidence', { participant: actor }); });
+          } else if (event.type === 'tool') {
+            if (!request.research) throw new AppError('UNEXPECTED_TOOLS', 'Tools outside the policy.');
+            call.researchPerformed = true;
+            if (measurement && (!event.toolId || !toolIds.has(event.toolId))) { measurement.record.tools++; if (event.toolId) toolIds.add(event.toolId); }
+          }
         }
+        if (native === null || final === null || final.length > 500_000) throw new AppError('INVALID_PROTOCOL', 'Session and complete answer required.');
+        request.signal.throwIfAborted();
+        const candidate = parseRoomAnswer(final);
+        const problem = initial.singleSentence ? sentenceProblem(redact(candidate.text), candidate.control) : null;
+        if (!problem) break;
+        // Never retry a transport failure, invalid core identity, or uncertain write.
+        if (attempt === 1 || !candidate.control || candidate.control.taskVersion !== call.taskVersion || candidate.control.grantId !== call.grantId)
+          throw new AppError('SINGLE_SENTENCE_FAILED', '一句模式發言未通過檢查，已停止本次發言；沒有公開不合格內容。');
+        request.session = native;
+        request.requestId = randomUUID();
+        request.room = { ...request.room!, sentenceCorrection: problem, messages: [] };
+        const rewritePayload = buildPrompt(request);
+        if (rewritePayload.length > 1_000_000) throw new AppError('CONTEXT_LIMIT', 'Input exceeds limit; no history was truncated.');
+        call.sentenceRewrite = { requestId: request.requestId, reason: problem, payloadHash: createHash('sha256').update(rewritePayload).digest('hex'), characters: rewritePayload.length };
+        await this.exclusive(async () => {
+          const s = this.get(id); this.assertStorage(id); request.signal.throwIfAborted();
+          if (s.status !== 'running' || runtime.pause) throw new AppError('SINGLE_SENTENCE_PAUSED', '一句模式發言尚未合格，已依暫停要求停止，未重寫或公開。');
+          await this.commit({ ...s, room: { ...s.room, calls: s.room.calls.map(c => c.id === call.id ? { ...c, sentenceRewrite: call.sentenceRewrite } : c) } }, 'state', { sentenceRewrite: call.id });
+        });
+        partial = ''; native = null; final = null;
       }
-      if (native === null || final === null || final.length > 500_000) throw new AppError('INVALID_PROTOCOL', 'Session and complete answer required.');
       const parsed = parseRoomAnswer(final), text = redact(parsed.text);
       await this.exclusive(async () => {
         const s = this.get(id); this.assertStorage(id);
@@ -274,9 +320,10 @@ export class RoomController {
         request.signal.throwIfAborted();
         if (s.status !== 'running') throw new AppError('CANCELLED', 'Execution no longer active.');
         const identity = parsed.control ?? parsed.fallbackIdentity;
-        const downgraded = parsed.diagnostic === 'schema' && identity?.taskVersion === call.taskVersion && identity.grantId === call.grantId;
+        const downgraded = !selectionCall && parsed.diagnostic === 'schema' && identity?.taskVersion === call.taskVersion && identity.grantId === call.grantId;
         if (downgraded) parsed.control = { version: 3, taskVersion: call.taskVersion, grantId: call.grantId, continuation: 'yield', action: { type: actor === 'moderator' ? 'observe' : 'none' }, references: [] };
-        const valid = parsed.control?.taskVersion === call.taskVersion && parsed.control.grantId === call.grantId;
+        const selected = selectionCall ? acceptSelection(s, call, parsed.control) : null;
+        const valid = parsed.control?.taskVersion === call.taskVersion && parsed.control.grantId === call.grantId && (!selectionCall || selected !== null);
         const messages = purpose === 'monitor' ? s.messages : [...s.messages, this.message(s, actor, text, purpose === 'moderation' ? 'moderation' : purpose === 'summary' ? 'summary' : 'discussion', 'completed', call.id, call.taskVersion,
           parsed.control?.continuation)];
         const availableIds = new Set([...call.messages, ...(prepared.session?.delivered ?? [])]);
@@ -285,7 +332,7 @@ export class RoomController {
         const metadataDiagnostics: MetadataDiagnostic[] = [...(parsed.metadataDiagnostics ?? [])];
         if (downgraded) metadataDiagnostics.push('control-schema');
         if (references.length !== offeredReferences.length) metadataDiagnostics.push('references');
-        const diagnostic: RoomCall['controlDiagnostic'] = identity && identity.taskVersion !== call.taskVersion ? 'task-version' : identity && identity.grantId !== call.grantId ? 'grant' : downgraded ? undefined : parsed.diagnostic;
+        const diagnostic: RoomCall['controlDiagnostic'] = identity && identity.taskVersion !== call.taskVersion ? 'task-version' : identity && identity.grantId !== call.grantId ? 'grant' : selectionCall && !selected ? parsed.diagnostic ?? 'schema' : downgraded ? undefined : parsed.diagnostic;
         if (parsed.control) parsed.control = { ...parsed.control, references };
         let workflow = s.room.workflow;
         if (workflow && purpose !== 'monitor') {
@@ -302,7 +349,7 @@ export class RoomController {
           ...(metadataDiagnostics.length ? { metadataDiagnostics: [...new Set(metadataDiagnostics)] } : {}) };
         const session = { ...native!, generation: call.generation, delivered: [...new Set([...(prepared.session?.delivered ?? []), ...call.messages, ...(purpose === 'monitor' ? [] : [call.id])])], configurationVersion: s.room.configurationVersion };
         measurement?.mark(purpose === 'monitor' ? 'diagnosticCommitStart' : 'answerCommitStart');
-        await this.commit({ ...s, messages, room: { ...s.room, ...(workflow ? { workflow } : {}), sessions: fresh ? s.room.sessions : { ...s.room.sessions, [actor]: session }, calls: s.room.calls.map(c => c.id === call.id ? completed : c) } },
+        await this.commit({ ...s, messages, room: { ...s.room, ...(selected ? { selection: selected } : {}), ...(workflow ? { workflow } : {}), sessions: fresh ? s.room.sessions : { ...s.room.sessions, [actor]: session }, calls: s.room.calls.map(c => c.id === call.id ? completed : c) } },
           purpose === 'monitor' ? 'state' : 'message', purpose === 'monitor' ? { monitorCompleted: call.id } : { message: messages.at(-1)! });
         measurement?.mark(purpose === 'monitor' ? 'diagnosticCommitEnd' : 'answerCommitEnd');
         if (measurement) { measurement.record.answerSaved = purpose !== 'monitor'; if (purpose === 'monitor') measurement.record.diagnosticsSaved = true; }
@@ -322,7 +369,7 @@ export class RoomController {
           const message = this.message(s, actor, redact(roomPreview(partial)), purpose === 'moderation' || purpose === 'monitor' ? 'moderation' : purpose === 'summary' ? 'summary' : 'discussion', cancelled ? 'cancelled' : 'indeterminate', call.id, call.taskVersion);
           if (runtime.turn?.interrupted && actor !== 'moderator') message.interruptedBy = 'moderator';
           const sessions = { ...s.room.sessions }; delete sessions[actor];
-          await this.commit({ ...s, messages: purpose === 'monitor' || notSubmitted ? s.messages : [...s.messages, message],
+          await this.commit({ ...s, messages: initial.singleSentence || purpose === 'monitor' || notSubmitted ? s.messages : [...s.messages, message],
             room: { ...s.room, sessions, calls: s.room.calls.map(c => c.id === call.id ? { ...c, status: cancelled ? 'cancelled' : 'failed', durationMs: Date.now() - started,
               ...(providerFailure ? { providerFailure } : {}) } : c) } }, 'error', { callId: call.id, participant: actor, error: safeError(error), ...(providerFailure ? { providerFailure } : {}) });
         });
@@ -346,7 +393,7 @@ export class RoomController {
       if (runtime.abort.signal.aborted || s.status !== 'running') return;
       if (result.call.taskVersion !== s.room.taskVersion) return;
       const action = control.action;
-      if (['none', 'propose', 'confirm'].includes(action.type)) throw new AppError('INVALID_CONTROL', 'Moderator command required.');
+      if (['none', 'propose', 'confirm', 'selection-options', 'selection-rating'].includes(action.type)) throw new AppError('INVALID_CONTROL', 'Moderator command required.');
       const a = JSON.parse(JSON.stringify(action, (_, value: unknown) => typeof value === 'string' ? redact(value) : value)) as ModeratorAction;
       const turn = runtime.turn;
       if (monitor && (!turn?.open || result.call.draft?.turnId !== turn.id || result.call.grantId !== turn.grantId)) return;
@@ -471,7 +518,9 @@ export class RoomController {
                 if (review) room.proposal = { ...room.proposal, reviews: [...(room.proposal.reviews ?? []).filter(r => r.actor !== actor), { ...review, reason: redact(review.reason), gaps: review.gaps.map(value => redact(value)), actor, callId: result.call.id }] };
                 if (review && (!review.adequate || review.gaps.length > 0)) {
                   room.proposal = { ...room.proposal, confirmed: room.proposal.confirmed.filter(id => id !== actor) };
-                  room.conclusionRequest = { target: room.proposal.author, kind: 'review', reason: redact(`Respond to this peer review of the proposed answer: ${review.reason}\nAddress the specific gaps in the current proposal's reviews. You may revise and publish a new proposal, or explain why you disagree. A rebuttal alone does not confirm the existing proposal.`) };
+                  room.conclusionRequest = review.adequate
+                    ? { target: actor, kind: 'repair', reason: 'Your review says adequate=true but also lists delivery gaps. Clarify your review of the exact supplied proposal.id: if requested content is missing, use adequate=false and specify the blocking gaps; if the answer is sufficient with limitations already retained in the proposal, use adequate=true and gaps=[]. Do not remove genuine gaps merely to finish. Any new substantive limitation or correction requires a revised proposal, not only a confirmation.' }
+                    : { target: room.proposal.author, kind: 'review', reason: redact(`Respond to this peer review of the proposed answer: ${review.reason}\nAddress the specific gaps in the current proposal's reviews. You may revise and publish a new proposal, or explain why you disagree. A rebuttal alone does not confirm the existing proposal.`) };
                 } else {
                   room.proposal = { ...room.proposal, confirmed: [...new Set([...room.proposal.confirmed, actor])] };
                   if (room.conclusionRequest?.target === actor) room.conclusionRequest = null;
@@ -532,8 +581,32 @@ export class RoomController {
     }
     return null;
   }
+  private async executeSelection(id: string, runtime: Runtime) {
+    while (!runtime.abort.signal.aborted) {
+      const s = this.get(id), selection = s.room.selection!;
+      if (s.status !== 'running') return;
+      if (runtime.pause || this.elapsed(runtime) >= s.limits.maxDurationMs) {
+        await this.exclusive(async () => { const current = this.get(id);
+          if (current.status === 'running' && !runtime.abort.signal.aborted) await this.commit({ ...current, status: 'paused', pauseReason: runtime.pause ? 'Paused by user.' : 'Duration limit reached.' }); });
+        return;
+      }
+      if (selection.optionSet && selection.ratings.length === s.participants.length) {
+        await this.exclusive(async () => { const current = this.get(id);
+          if (current.status !== 'running' || runtime.abort.signal.aborted) return;
+          const selected = current.room.selection!;
+          await this.commit({ ...current, status: 'paused', pauseReason: 'Selection completed.', room: { ...current.room,
+            selection: { ...selected, phase: 'complete', result: selectionRanking(selected.optionSet!, selected.ratings) } } }); });
+        return;
+      }
+      const generating = !selection.optionSet;
+      const actor = generating ? s.participants[0]!.id : s.participants.find(p => !selection.ratings.some(r => r.actor === p.id))!.id;
+      await this.call(id, runtime, actor, generating ? 'selection-options' : 'selection-rating', generating ?
+        'Generate distinct options and exactly three shared evaluation criteria.' : 'Independently score every option against each of the three frozen criteria.');
+    }
+  }
   private async execute(id: string, runtime: Runtime) {
     try {
+      if (this.get(id).kind === 'selection') { await this.executeSelection(id, runtime); return; }
       if (runtime.purpose === 'summary') {
         const s = this.get(id), actors: ParticipantId[] = s.moderator ? ['moderator'] : s.participants.map(p => p.id);
         for (const actor of actors) await this.call(id, runtime, actor, 'summary', 'Summarize eligible saved discussion, checking earlier summary drafts and preserving disagreements, unknowns and limitations. Do not declare completion.', null, undefined, undefined, true);
@@ -570,7 +643,9 @@ export class RoomController {
             if (runtime.deliveryRepair.attempts >= 3) {
               await this.exclusive(async () => {
                 const current = this.get(id); if (current.status !== 'running' || runtime.abort.signal.aborted) return;
-                if (current.mode === 'conclusion') await this.commit({ ...current, status: 'paused', pauseReason: '結論仍需補寫或審查；已達本次修正上限，保留原文與缺漏，請明確續談。' });
+                if (current.mode === 'conclusion') await this.commit({ ...current, status: 'paused', pauseReason: current.room.proposal?.reviews?.some(r => r.actor === correction.target && r.adequate && r.gaps.length > 0)
+                  ? '審查判定仍矛盾；已達本次修正上限，尚未完成確認，請查看保留的提案與缺漏。'
+                  : '結論仍需補寫或審查；已達本次修正上限，保留原文與缺漏，請明確續談。' });
                 else await this.commit({ ...current, room: { ...current.room, proposal: null, conclusionRequest: null,
                   calls: current.room.calls.map(c => c.id === runtime.deliveryRepair?.callId ? { ...c, metadataDiagnostics: [...new Set<MetadataDiagnostic>([...(c.metadataDiagnostics ?? []), 'delivery-repair-limit'])] } : c) } }, 'state', { deliveryRepairExhausted: true });
               });
@@ -613,7 +688,7 @@ export class RoomController {
       }
     } catch (error) {
       if (!this.store.isBlocked(id)) await this.exclusive(async () => { const s = this.get(id); if (s.status === 'running') await this.commit({ ...s,
-        status: runtime.abort.signal.aborted ? 'stopped' : s.room.calls.some(c => c.status === 'failed' && Date.parse(c.startedAt) >= runtime.startedAt) ? 'indeterminate' : 'paused', pauseReason: safeError(error), room: { ...s.room, grant: null, currentSpeaker: null } }, 'error', { error: safeError(error) }); });
+        status: runtime.abort.signal.aborted ? 'stopped' : error instanceof AppError && ['SINGLE_SENTENCE_FAILED', 'SINGLE_SENTENCE_PAUSED'].includes(error.code) ? 'paused' : s.room.calls.some(c => c.status === 'failed' && Date.parse(c.startedAt) >= runtime.startedAt) ? 'indeterminate' : 'paused', pauseReason: safeError(error), room: { ...s.room, grant: null, currentSpeaker: null } }, 'error', { error: safeError(error) }); });
     } finally {
       try { if (!this.store.isBlocked(id)) await this.exclusive(async () => {
         const s = this.get(id), lastCommand = s.room.commands.at(-1);
@@ -639,25 +714,48 @@ export class RoomController {
   }
   async stop(id: string) { return this.exclusive(async () => {
       assertEditable(this.get(id)); const s = this.get(id); await this.commit({ ...s, status: 'stopped', pauseReason: 'Stopped by user.', room: { ...s.room, grant: null, currentSpeaker: null } }); this.runtimes.get(id)?.abort.abort(); return this.get(id); }); }
-  async send(id: string, messageId: string, text: string, recipient: ParticipantId | 'all', inReplyTo: string | null = null) {
+  async send(id: string, messageId: string, text: string, recipient: ParticipantId | 'all', inReplyTo: string | null = null, files: PreparedAttachment[] = []) {
     return this.exclusive(async () => {
       assertEditable(this.get(id));
-      const s = this.get(id); const normalized = redact(text); const old = s.messages.find(m => m.id === messageId);
-      if (old) { if (old.sender !== 'user' || old.text !== normalized || old.recipient !== recipient || old.inReplyTo !== inReplyTo) throw new AppError('IDEMPOTENCY_CONFLICT', 'Message ID already used.'); return s; }
+      if (this.get(id).kind === 'selection') throw new AppError('INVALID_STATE', 'Selection inputs are frozen; create a new evaluation.');
+      const s = this.get(id); this.assertStorage(id); const normalized = redact(text); const old = s.messages.find(m => m.id === messageId);
+      if (old) { if (old.sender !== 'user' || old.text !== normalized || old.recipient !== recipient || old.inReplyTo !== inReplyTo || JSON.stringify(attachmentFingerprint(old.attachments ?? [])) !== JSON.stringify(attachmentFingerprint(files))) throw new AppError('IDEMPOTENCY_CONFLICT', 'Message ID already used.'); return s; }
+      if (!normalized.trim() && !files.length) throw new AppError('INVALID_INPUT', 'A message needs text or an attachment.', 400);
       if (s.status === 'stopped' || s.status === 'indeterminate') throw new AppError('INVALID_STATE', 'Rebuild before adding input.');
       if (recipient !== 'all' && !s.participants.some(p => p.id === recipient)) throw new AppError('INVALID_REFERENCE', 'Directed input is restricted to speaker seats. Moderator input is public.');
       if (recipient === 'moderator') throw new AppError('INVALID_REFERENCE', 'Moderator accepts public messages only.');
       if (inReplyTo && !s.messages.some(m => m.id === inReplyTo && m.status === 'completed' && (m.recipient === 'all' || recipient !== 'all' && m.recipient === recipient))) throw new AppError('INVALID_REFERENCE', 'Reply outside recipient visibility.');
-      const m = { ...this.message(s, 'user', normalized, 'discussion', 'completed', messageId), recipient, inReplyTo };
-      await this.commit({ ...s, messages: [...s.messages, m], room: { ...s.room, taskVersion: s.room.taskVersion + 1, outcome: null, proposal: null, conclusionRequest: null } }, 'message', { message: m }); return this.get(id);
+      const attachments = await this.store.attachments.save(id, files);
+      const m = { ...this.message(s, 'user', normalized, 'discussion', 'completed', messageId), recipient, inReplyTo, ...(attachments.length ? { attachments } : {}) };
+      try { await this.commit({ ...s, messages: [...s.messages, m], room: { ...s.room, taskVersion: s.room.taskVersion + 1, outcome: null, proposal: null, conclusionRequest: null } }, 'message', { message: m }); }
+      catch (error) { if (!this.store.isBlocked(id)) await this.store.attachments.remove(id, attachments); throw error; }
+      return this.get(id);
     });
+  }
+  async attachment(id: string, attachmentId: string, kind: 'original' | 'text') {
+    const attachment = this.get(id).messages.flatMap(m => m.attachments ?? []).find(a => a.id === attachmentId);
+    if (!attachment) throw new AppError('NOT_FOUND', 'Attachment not found.', 404);
+    return { attachment, bytes: await this.store.attachments.read(id, attachment, kind) };
+  }
+  async attachmentExport(id: string) {
+    return Promise.all(this.get(id).messages.flatMap(m => (m.attachments ?? []).map(async a => ({ messageId: m.id, recipient: m.recipient,
+      ...a, text: (await this.store.attachments.read(id, a, 'text')).toString('utf8') }))));
   }
   async configure(id: string, patch: { mode?: RoomInput['mode'] | undefined; flow?: RoomInput['flow'] | undefined; limits?: Omit<RoomInput['limits'], 'maxModeratorCalls'> & { maxModeratorCalls?: number | undefined } | undefined; topic?: string | undefined; goal?: string | undefined; constraints?: string | undefined; expectedVersion?: number | undefined; confirmRoles?: boolean | undefined;
     research?: boolean | undefined; roots?: string[] | undefined; discussionPolicyVersion?: 1 | undefined; moderatorMode?: RoomInput['moderatorMode'] | undefined }) {
     return this.exclusive(async () => {
+      if (Object.hasOwn(patch, 'singleSentence')) throw new AppError('INVALID_STATE', 'Response mode is fixed when the discussion is created.');
       assertEditable(this.get(id));
       const s = this.get(id); if (this.busy) throw new AppError('BUSY', 'Pause before changing settings.');
       if (patch.expectedVersion !== s.room.configurationVersion) throw new AppError('VERSION_CONFLICT', 'Refresh before changing settings.');
+      if (s.kind === 'selection') {
+        if (Object.entries(patch).some(([key, value]) => value !== undefined && !['expectedVersion', 'limits'].includes(key))) throw new AppError('INVALID_STATE', 'Selection inputs are frozen; only time limits can change.');
+        if (patch.limits) {
+          const limits = roomInputSchema.shape.limits.parse({ ...s.limits, maxDurationMs: patch.limits.maxDurationMs, turnTimeoutMs: patch.limits.turnTimeoutMs });
+          await this.commit({ ...s, limits, room: { ...s.room, configurationVersion: s.room.configurationVersion + 1 } });
+        }
+        return this.get(id);
+      }
       if (patch.moderatorMode && !s.moderator) throw new AppError('INVALID_STATE', 'Moderator mode requires a moderator.');
       const research = patch.research ?? s.research;
       if (research && (s.backend !== 'live' || [...s.participants, ...(s.moderator ? [s.moderator] : [])].some(p => !['codex', 'claude'].includes(p.provider))))

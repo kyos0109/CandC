@@ -28,7 +28,7 @@ export function summaryOf(state: State, runtime = false) {
     sequence: state.sequence, folder: folderOf(state), management: state.management, storage: state.storage,
     runtime, participants: state.behaviorVersion === 3 ? state.participants.map(p => ({ id: p.id, provider: p.provider })) : [],
     moderator: state.behaviorVersion === 3 && !!state.moderator,
-    outcome: state.behaviorVersion === 3 ? state.room.outcome?.authority ?? null : state.v2?.completed ? 'participants' as const : null };
+    outcome: state.behaviorVersion === 3 ? state.room.selection?.phase === 'complete' ? 'selection' as const : state.room.outcome?.authority ?? null : state.v2?.completed ? 'participants' as const : null };
 }
 export type DiscussionSummary = ReturnType<typeof summaryOf>;
 export const indexQuerySchema = z.object({ folder: folderSchema.default('active'), q: z.string().max(32_000).default(''),

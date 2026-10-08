@@ -51,7 +51,7 @@ describe('neutral discussion, reviewed stages and optional metadata', () => {
       if (r.room!.actor === 'claude' && !reviewed) {
         reviewed = true;
         return response(r, { type: 'confirm', proposalId: r.room!.proposal.id,
-          review: { adequate: true, reason: 'The conditional answer is acceptable, but requested evidence remains missing.', gaps: ['Verify the requested evidence.'] } }, {}, 'done');
+          review: { adequate: false, reason: 'The requested evidence remains missing.', gaps: ['Verify the requested evidence.'] } }, {}, 'done');
       }
       return response(r, { type: 'none' }, {}, 'done');
     }, { mode: 'conclusion', flow, moderator, limits: { maxRounds: 8, maxDurationMs: 30_000, turnTimeoutMs: 5_000, maxModeratorCalls: 30 } });
@@ -171,6 +171,7 @@ describe('neutral discussion, reviewed stages and optional metadata', () => {
     const s = await ctx.run(); expect(s.room.contributions).toBe(12); expect(s.room.outcome).toBeNull();
     expect(s.pauseReason).not.toContain('修正上限'); expect(s.room.proposal!.reviews![0]!.adequate).toBe(false);
   });
+  // Sixteen turns perform 100 durable commits plus reload; coverage exceeds the default 5s budget.
   it('resets format repairs across independently resolved delivery and review episodes', async () => {
     let turn = 0;
     const ctx = await setup(r => {
@@ -178,11 +179,11 @@ describe('neutral discussion, reviewed stages and optional metadata', () => {
       return response(r, phase === 0 ? { type: 'propose', result: 'A saved answer needing metadata.', dissent: [], unresolved: [] } : phase === 1 ? proposal() :
         { type: 'confirm', proposalId: r.room!.proposal!.id, ...(phase === 3 ? { review } : {}) });
     }, { limits: { maxRounds: 8, maxDurationMs: 30_000, turnTimeoutMs: 5_000, maxModeratorCalls: 20 } });
-    const s = await ctx.run(); expect(ctx.storageErrors.map(String)).toEqual([]); expect(s.room.contributions).toBe(16); expect(s.room.interimResults).toHaveLength(4); expect(s.room.outcome).toBeNull();
+    const s = await ctx.run(); expect(ctx.storageErrors.map(String)).toEqual([]); expect(ctx.requests).toHaveLength(16); expect(s.room.contributions).toBe(16); expect(s.room.interimResults).toHaveLength(4); expect(s.room.outcome).toBeNull();
     await ctx.controller.close(); const bytes = await readFile(path.join(ctx.directory, ctx.id + '.jsonl'));
     const reloaded = await ctx.build(); expect(reloaded.get(ctx.id).room.interimResults).toEqual(s.room.interimResults);
     expect(await readFile(path.join(ctx.directory, ctx.id + '.jsonl'))).toEqual(bytes);
-  });
+  }, 15_000);
   it.each(['auto', 'conclusion'] as const)('%s treats exhausted format repairs according to execution mode', async mode => {
     const ctx = await setup(r => response(r, { type: 'propose', result: 'Saved public reasoning.', dissent: [], unresolved: [] }),
       { mode, limits: { maxRounds: 4, maxDurationMs: 30_000, turnTimeoutMs: 5_000, maxModeratorCalls: 20 } });

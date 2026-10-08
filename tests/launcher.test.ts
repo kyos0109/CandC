@@ -21,7 +21,17 @@ async function fixture(handler: (request: IncomingMessage, response: ServerRespo
   };
 }
 
-function run(script: 'start' | 'stop', port: number, root?: string) {
+async function run(script: 'start' | 'stop', port: number, root?: string): Promise<{ code: number; output: string }> {
+  if (!root) {
+    await mkdir('.cache', { recursive: true });
+    const isolatedRoot = await mkdtemp(path.resolve('.cache/launcher-test-'));
+    try {
+      await mkdir(path.join(isolatedRoot, 'scripts'));
+      for (const file of ['start.ps1', 'stop.ps1', 'launcher.mjs', 'install.mjs'])
+        await copyFile(path.join(scripts, file), path.join(isolatedRoot, 'scripts', file));
+      return await run(script, port, isolatedRoot);
+    } finally { await rm(isolatedRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); }
+  }
   return new Promise<{ code: number; output: string }>((resolve, reject) => {
     const child = spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
       path.join(root ? path.join(root, 'scripts') : scripts, `${script}.ps1`),

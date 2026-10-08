@@ -4,6 +4,343 @@ This is a dated record of observed checks, not a development backlog. Run only
 checks relevant to the current task; see [CONTRIBUTING.md](CONTRIBUTING.md).
 Contracts belong to their owning documents listed in [AGENTS.md](AGENTS.md).
 
+## Discussion template review fixes (2026-10-08)
+
+Reviewed the clean `7d3b3bd` tree and fixed the remaining creation-form regressions.
+Seat model/effort callbacks now carry only those settings, preserving role edit
+ownership and reset undo. Scenario application waits for pending seat removal.
+Selected cards retain their background and border on hover. Engineering Review
+role labels now follow the selected locale while inserted snapshots retain their
+language. Scenario hints name the visible controls and describe prefilling accurately.
+Switching to selection continues to preserve editable goal and role text; the
+owning documents and browser assertions now make that behavior explicit.
+
+The new effort and pending-removal cases failed before the implementation changes.
+Final backend/frontend typechecks and isolated compilation passed. All 37 helper
+tests passed. Complete coverage with `--maxWorkers=2` passed all 58 files:
+731 tests passed, three existing platform cases skipped and none failed. Unchanged
+coverage thresholds were met: lines 78.10%, statements 67.31%, functions 54.95%,
+branches 63.64%.
+
+All 37 scenario browser cases passed, including effort before/after application,
+reset undo after an effort change, timed removal, manual edit protection and locale
+snapshots. Twelve locale/theme/viewport cases check localized role labels and
+selected hover colors alongside existing focus, contrast and overflow assertions.
+The complete final browser suite passed all 126 cases with no skips, retries or
+failures, including the final English-hint and selection-text preservation checks.
+Its 600-second overall cap and 660-second watchdog did not fire.
+
+Reports: `.cache/templates-review-tests.json`, `.cache/templates-review-coverage/`,
+`.cache/templates-review-e2e-full.json` and `.cache/templates-review-e2e-full/`.
+Verification used installed Chrome, fake providers, disposable journals and
+`.cache/templates-review-fixes/` for isolated builds. Source/test SHA-256 hashes
+remained unchanged throughout the final browser run. Owning document links and
+`git diff --check` passed. No live inference, normal build replacement, service
+restart, dependency installation or commit was performed.
+
+## Scenario follow-up fixes and activation (2026-10-08)
+
+The creation form now summarizes current scenario settings, customized managed
+fields and all seat/moderator readiness or model-setting gaps. Explicit reset
+replaces only template-managed fields; undo restores their values and edit
+protection by UID, preserving later changes to other settings. Repeated resets
+retain the original undo point. Managed edits, seat changes and scenario
+application invalidate undo. Traditional Chinese and English labels are aligned;
+editable text retains its selected language snapshot.
+
+The idle-review browser fixture now models an explicit rejection, retaining the
+original four-contribution assertion. A separate contradictory-review case checks
+clarification by the same reviewer against the exact proposal and target, retained
+gaps and unchanged state/call count after reload. This resolves the recovery failure
+recorded in the earlier scenario snapshot below without changing execution code.
+
+Final typechecks and isolated compilation passed. Complete coverage passed all
+58 files: 729 tests passed, three existing platform cases skipped and none failed.
+Coverage met unchanged thresholds: lines 78.10%, statements 67.31%, functions
+54.95%, branches 63.66%. The helper suite includes 35 cases. The complete final
+browser run passed all 124 cases with no skips, retries or failures. A separate
+12-case focus run also passed without screenshots. Both locales, both themes and
+1440x900, 1280x720 and 390x844 viewports use enlarged text and check keyboard
+focus, contrast, overflow and console output. Final desktop/mobile screenshots
+were inspected. Tests exposed sticky-bar overlap on English mobile; scoped action
+scroll margins now clear it. The unobscured-focus assertion runs before screenshots
+can alter scrolling. Individual test deadlines and behavior assertions were retained;
+the expanded full browser run used a 600-second overall cap and 660-second watchdog.
+
+Reports: `.cache/templates-fixes-tests.json`, `.cache/templates-fixes-coverage/`,
+`.cache/templates-fixes-focus-final.json` and
+`.cache/templates-fixes-e2e-final-second.json`. Verification used installed Chrome,
+fake providers, disposable journals and isolated builds. No live inference or
+dependency installation was performed. Watchdogs did not fire.
+
+After verification, the authorized source launcher rebuilt normal outputs and
+started the local server on port 4317. Health, process ownership and instance ID
+matched; all 78 isolated build files matched normal outputs, and the served index
+and three startup assets matched their SHA-256 hashes. Before activation, 79 old
+build files were copied and hash-verified under
+`.cache/templates-fixes-activation-backup/`; its manifest identifies the rollback
+outputs. Activation evidence is in
+`.cache/templates-fixes-activation-verification.json`. Storage schemas and execution
+controllers were unchanged. Document links and `git diff --check` passed.
+
+## Optional discussion scenarios (2026-10-08)
+
+The version 3 creation form now offers six optional scenario cards. Applying a
+card prefills only existing goal/kind/mode and speaker label/instruction fields;
+manual edits, including cleared text and explicitly selected current values,
+survive switching and reapplication. Seat origin tracking uses UIDs. Template
+identity and origins are not submitted or persisted. Provider/model/effort,
+moderator authority, research, attachments and other settings remain editable
+and unchanged by template application. UI labels support Traditional Chinese
+and English; previously inserted text retains its language when locale changes.
+
+Observed checks: `npm run typecheck`, isolated compilation and all 33 new helper
+tests passed. Complete coverage with `--maxWorkers=2` passed all 58 files:
+727 tests passed and three existing platform cases skipped. Coverage met unchanged
+thresholds: lines 78.17%, statements 67.48%, functions 55.28%, branches 63.87%.
+An initial default-concurrency run hit existing five-second test deadlines;
+all 164 cases in those six files passed with one worker, and the complete
+two-worker run is the final coverage result.
+
+All 25 new Playwright cases passed together in the final run. They exercise
+creation/submitted input, manual edits, UID replacement, selection/debate,
+attachment and single-sentence coexistence, unchanged runtime settings and locale
+snapshots. Twelve visual cases cover both locales, both themes and 1440x900,
+1280x720 and 390x844 viewports with enlarged text, keyboard selection, contrast,
+overflow and console checks. Desktop screenshots were inspected. Installed Chrome
+was selected through `CANDC_BROWSER_PATH` after managed Chromium failed to launch.
+
+The complete 113-case browser run had 111 passes and two failures. One new
+Research Council case failed before template interaction because Chrome could
+not load a JavaScript asset (`net::ERR_NO_BUFFER_SPACE`); it passed alone and
+in the final 25-case run. The existing recovery test at
+`e2e/session-recovery.spec.ts:52` expects four contributions but receives five.
+That exact failure was reproduced using an unchanged `90be349` archive in
+`.cache/templates-baseline-90be349/`, excluding all scenario changes. Its
+contradictory-review fixture now triggers the previously committed clarification
+behavior. The old recovery assertion/fixture was not changed in this UI task;
+the complete browser suite is therefore not reported as passing.
+
+Reports: `.cache/templates-coverage/`, `.cache/templates-tests.json`,
+`.cache/templates-e2e-full.json`, `.cache/templates-e2e-final.json`,
+`.cache/templates-e2e-final/` and `.cache/templates-baseline-e2e.json`.
+Verification used fake providers, disposable journals and isolated builds;
+no live inference, normal build replacement, service restart or dependency
+installation was performed. Watchdogs did not fire. Owning documentation links
+and `git diff --check` passed.
+
+## Repair-episode integration test deadline (2026-10-08)
+
+The multi-episode repair test now has a local 15-second deadline instead of the
+default five seconds. Its original assertions remain, with an additional bound
+of exactly 16 provider calls. Product code, provider deadlines, the global test
+timeout and coverage thresholds are unchanged.
+
+A temporary diagnostic clone measured 16 fake turns and 100 durable commits in
+both runs. Without/with coverage, commit preparation (including schema validation
+and journal replay) took 0.82/1.48 seconds; writes plus sync/close took 0.23/0.25
+seconds. Coverage and whole-suite execution leave insufficient room in the old
+five-second whole-case budget; no extra provider calls were observed. Diagnostic
+single-case/file coverage reports intentionally did not meet whole-project
+thresholds and are not counted as full verification passes.
+
+The candidate was isolated from concurrent UI work at `814d767` plus this test
+change in `.cache/repair-timeout-candidate/`. All 61 affected tests and typechecks
+passed. Full coverage with `--maxWorkers=2`, with no case filter or exclusion,
+passed all 57 files: 694 tests passed and three existing platform cases skipped.
+The formerly timing-out case passed in 6.217 seconds; the suite took 101.39 seconds
+and its 240-second watchdog did not fire. Coverage passed unchanged thresholds:
+lines 78.29%, statements 67.58%, functions 55.29%, branches 63.95%.
+The candidate's `.cache/repair-timeout-tests.json` and `.cache/coverage/` retain
+the reports. This resolves the test-deadline follow-up recorded under attachments;
+no cases need to be filtered out. Browser tests were not repeated for this
+test-only change. No live provider, normal build replacement or restart was used.
+
+## Contradictory conclusion reviews (2026-10-08)
+
+A positive review with nonempty delivery gaps now requests clarification from
+the same reviewer against the exact proposal, using the existing bounded repair
+episode. Genuine rejection still returns to the author; accepted limitations stay
+in the proposal. Done or prose-only replies never imply confirmation. No journal
+schema changed and existing paused histories were not rewritten.
+
+Observed on the shared working tree: typechecks, isolated compilation, 101 focused
+tests and all 57 files in the final full coverage run passed (694 tests passed,
+three existing platform skips). Coverage met unchanged thresholds: lines 78.29%,
+statements 67.58%, functions 55.29%, branches 63.95%. The first full run had one
+existing five-second multi-episode test timeout; that case passed both a focused
+coverage recheck and the final full run without changing its timeout/assertions.
+The focused coverage-only recheck did not meet whole-project thresholds, as
+expected for one case; the final complete report is authoritative.
+
+All four existing conclusion-delivery browser cases passed using installed Chrome
+after the default Playwright launch reported a missing managed browser. Tests used
+fake-only disposable journals and isolated build output. Reports are in
+`.cache/review-clarification-coverage/`, `.cache/review-clarification-tests-final.json`
+and `.cache/review-clarification-e2e-results/`. Verification watchdogs did not fire.
+Before commit, the exact staged candidate (excluding unrelated attachment work)
+was materialized in `.cache/review-commit-candidate/`; typechecks, isolated
+compilation and all 101 affected tests passed again on that candidate.
+
+No live model inference, normal build replacement, service restart or automatic
+continuation of the affected real discussion was performed.
+
+## User attachments v1 (2026-10-08)
+
+Version 3 discussion/debate creation and subsequent messages accept text/code,
+CSV/JSON, text PDFs, DOCX and XLSX attachments. Originals and redacted extracted
+text are saved before the referencing message, scoped to its recipient, and
+included in recovery, exports and retryable permanent deletion. Selection and
+legacy attachment writes remain unavailable. Existing single-sentence work in
+the shared checkout was preserved.
+
+Ten new backend cases exercise actual worker extraction into fake-provider
+prompts, same-provider seat/moderator privacy, incremental delivery and rebuild,
+hash verification, idempotency, uncertain storage, deletion retries, original
+downloads, exports, UTF-8/BOM UTF-16, malformed/encrypted archives, parser timeout,
+ZIP expansion, per-file/aggregate limits and oversized-history preflight. HTTP
+checks also confirm multipart files over 128 KiB are accepted while JSON retains
+its original 128 KiB limit, including whitespace-heavy JSON bodies.
+
+Observed final checks: typechecks and isolated compilation passed. The complete
+88-case browser suite passed using a fresh Chrome profile against the fake-only
+fixture at http://127.0.0.1:4399. After the final multipart/JSON-limit and
+attachment-only draft confirmation changes, all nine affected attachment and
+management browser cases passed again. The new flows cover file removal/drop,
+creation, preview, original download, failed-draft retention, private file-only
+messages, lost-response retry, reload, English labels, cancelled archival and
+390px width. Desktop 1280x720 and mobile 390x844 screenshots were inspected;
+page identity, rendered content, no error overlay, console health and interaction
+checks passed. Browser plugin was not available; Playwright's bundled Chromium
+was absent, so the repository's CANDC_BROWSER_PATH option selected installed Chrome.
+
+The final 691-case unit inventory was covered in complementary runs: 687 passed
+with coverage, one pre-existing repair-episode case passed independently within
+its unchanged 5-second timeout, and three existing POSIX-only cases were skipped
+on Windows. Full runs intermittently timed out on that repair case; one run also
+hit a transient EPERM renaming an installer fixture directory, which passed on
+the next complete run. No assertions, timeouts, source coverage exclusions or
+thresholds were weakened. Final commands were:
+
+```text
+npx vitest run tests/room-discussion-revision.test.ts -t "resets format repairs across independently resolved delivery and review episodes" --maxWorkers=1
+npm run test:coverage -- --maxWorkers=2 --testNamePattern="^(?!.*resets format repairs across independently resolved delivery and review episodes)"
+```
+
+The coverage run excludes that one test invocation, not its source file, and
+passes the unchanged global thresholds: lines 78.29%, statements 67.58%,
+functions 55.27%, branches 63.92%. Parser workers are exercised by real format
+fixtures, but their separate V8 counters are not aggregated into Vitest's report.
+An earlier complete 690-case coverage run also passed before the final additional
+history-limit case and hardening changes.
+
+`npm audit` reported zero vulnerabilities after scoped transitive overrides;
+source/history secret scans found no leaks. No live CLI calls, normal runtime
+build replacement, service restart or publishing were performed. Real
+provider reasoning quality, macOS/Linux filesystem behavior and arbitrary complex
+document layouts remain unverified; images/charts/OCR are outside this feature.
+
+The commit-readiness recheck includes the independently committed single-sentence
+and conclusion-review changes. Typechecks passed. Both full forks and threads
+coverage runs passed 693 cases but timed out on the same repair-episode case above;
+that case passed independently (1.68 seconds for the entire focused run). The
+complementary coverage command above passed all 57 files with 693 cases, one
+explicitly filtered case and three platform skips: 694 unique passes overall.
+Coverage was lines 78.29%, statements 67.58%, functions 55.29%, branches 63.95%.
+The final coverage run had a 240-second watchdog and finished in 88.25 seconds;
+no process was terminated. Audit again reported zero vulnerabilities and source
+plus 31-commit history secret scans found no leaks. Whole-suite repair-test timing
+remains an observed limitation; no test assertions or thresholds were changed.
+Isolated compilation and all nine attachment/management browser cases passed
+again on this commit candidate using the fake-only Chrome fixture.
+
+## Single-sentence response mode (2026-10-08)
+
+Implemented the creation-only response setting for version 3 discussions and
+debates, independent of execution mode. All AI prose, including conclusion and
+review metadata, is checked before publication. A completed, identity-valid
+rejected answer permits one correction in the same owned session, with a new
+provider request ID and a durable preparation record. Failed/unfinished drafts
+never enter public messages or peer input; stop, pause and uncertain storage
+retain their scheduling barriers. Older rooms retain their existing behavior.
+
+Before commit, the feature-only candidate was reconstructed from HEAD and the
+14 intended files in `.cache/sentence-commit-snapshot/`, excluding concurrent
+attachment work. Typechecks, all 53 new unit cases, isolated compilation and all
+13 affected browser cases passed on that candidate. The cases cover format and
+metadata boundaries, persistence, bounded correction, privacy, cancellation,
+storage faults, restart, localized failures, conclusions, reload and 390px width.
+Desktop/mobile screenshots were inspected during implementation. Whitespace
+checks passed; runtime outputs were not replaced.
+
+The default concurrent full coverage run hit test timeouts. A single-worker full
+run observed 676 passed, three existing platform skips and two 5-second timeouts
+in existing multi-turn repair cases. Both cases passed independently with
+coverage in 1.055 and 2.997 seconds, without changing assertions or timeouts.
+This verifies all 678 applicable cases across the full run and focused recheck;
+it is not a claim of a timeout-free full run. Native report merging met unchanged
+thresholds: lines 79.49%, statements 68.57%, functions 55.87%, branches 64.10%.
+Reports are under the candidate's `.cache/commit-coverage/`, with full-run results
+in `.cache/commit-serial-tests.json` and native blobs in `.cache/commit-blobs/`.
+Partial collections alone fail global coverage thresholds; merged task totals
+include duplicate/skipped recheck entries and are not unique inventory counts.
+
+No live AI inference, native session correction, production restart or normal
+build activation was exercised. Sentence segmentation is a deterministic format
+check, not proof of semantic brevity or a single main idea; those remain prompt
+requirements. Rollback compatibility follows the matching journal/build rule in
+the room contract.
+
+## Option evaluation v1 (2026-10-08)
+
+Added a separate selection room: the first seat generates 2–6 options and three
+shared criteria, then every seat rates the frozen matrix in an isolated session.
+All valid ratings must be durably saved before a deterministic, equal-weight
+ranking is published. Partial failures preserve accepted scores and require
+explicit continuation; ties share rank. Existing discussion modes remain available.
+
+Observed checks: typechecks, isolated compilation and diff whitespace checks
+passed. The 27 new unit cases cover matrix validation, fresh sessions, malformed
+output, ranking, frozen configuration, partial retry, stop/rebuild and storage
+failures including the final ranking commit. Both new browser cases passed,
+including creation, reload, exports, English labels, mobile width and partial retry.
+Desktop and 390px screenshots were inspected.
+
+The final creation-form correction preserves the moderator draft when switching
+to evaluation and back. Both affected browser cases passed again, including
+restored moderator/judge controls, unchanged seat/host fields and a submitted
+evaluation with no moderator. Typechecks and isolated compilation passed again.
+
+Pre-commit verification repeated the full inventory in complementary batches:
+625 passed, three platform skips; merged coverage was lines 77.71%, statements
+66.61%, functions 54.23%, branches 62.14%, passing unchanged thresholds. Reports
+are in `.cache/selection-commit-merged/`. The initial launcher stop case exposed
+an existing isolation defect: source launchers read the repository runtime record
+before the fixture port and stopped the running local service. Launcher tests now
+copy their scripts into a disposable root, so they cannot read that record. All
+nine launcher cases passed after this correction. The service was not restarted.
+Source/history secret scans found no leaks.
+
+The complete 628-case unit inventory was verified in complementary runs: 625
+passed and three existing POSIX-only cases were skipped on Windows. Whole-suite
+coverage runs hit the existing 5-second repair-episode test timeout; that case
+passed independently without changing its timeout. A complementary run also hit
+a transient Windows EPERM during an installation fixture rename; its rerun passed.
+A multiline redaction case omitted by the name filter was included in a separate
+redaction run. Native Vitest blob reports were merged, with the unchanged global
+thresholds enforced: lines 77.69%, statements 66.58%, functions 54.20%, branches
+62.12%. Partial focused coverage reports alone fail global thresholds as expected;
+the final native merge passed. Reports are in `.cache/selection-coverage-merged/`
+and `.cache/selection-coverage-*-tests.json`.
+
+All 85 browser cases passed across two runs with installed Chrome. The initial
+run passed 81 cases before the unchanged 360-second suite deadline; the remaining
+four passed separately. No assertions or per-test timeouts were relaxed. Browser
+verification used fake adapters and isolated build outputs. Real Codex/Claude
+generation and scoring quality, native macOS/Linux behavior, and production
+runtime activation were not exercised. No normal build, service restart or live
+provider authentication was performed.
+
 ## Source launcher entrypoints (2026-10-08)
 
 Added thin root-level macOS `.command` and Linux `.sh` start/stop entrypoints.

@@ -2,6 +2,12 @@
 
 ## Folders and authority
 
+Uploaded originals and extracted text follow their owning discussion through
+archive, trash and restore. Permanent deletion removes the discussion's attachment
+files only after its deletion marker is durable. Remaining attachment files count
+as an incomplete deletion and are removed on an explicit retry. Other discussions'
+attachments remain untouched; downloads are unavailable once deletion is marked.
+
 Versions 1, 2 and 3 share manual `active`, `archived` and `trash` folders. Missing
 `management` metadata means active; startup does not migrate old journals.
 Archive/unarchive/trash/restore append an ordinary durable state event containing

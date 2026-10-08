@@ -6,6 +6,14 @@ import { AppError } from '../domain.js';
 
 export function fakeRoomResponse(request: TurnRequest): string {
   const r = request.room!;
+  if (r.selection) {
+    const action = r.purpose === 'selection-options' ? { type: 'selection-options',
+      options: Array.from({ length: r.selection.optionCount }, (_, i) => ({ id: `option-${i + 1}`, title: `示範選項 ${i + 1}`, description: '僅驗證流程的候選方案，沒有真實 AI 推論。' })),
+      criteria: ['目標符合程度', '可行性', '成本效益'].map((title, i) => ({ id: `criterion-${i + 1}`, title, description: '分數越高代表越符合此標準。僅為示範。' })) } :
+      { type: 'selection-rating', optionSetId: r.selection.optionSet!.id,
+        scores: r.selection.optionSet!.options.flatMap((o, i) => r.selection!.optionSet!.criteria.map(c => ({ optionId: o.id, criterionId: c.id, score: 9 - i, reason: '示範評分，沒有真實 AI 推論。' }))), limitations: ['示範分數不能用於實際決策。'] };
+    return `示範評選回覆，僅驗證流程。\n${ROOM_CONTROL_START}\n${JSON.stringify({ version: 3, taskVersion: r.taskVersion, grantId: r.grantId, continuation: 'done', action, references: [] })}\n${ROOM_CONTROL_END}`;
+  }
   const publicAnswers = r.messages.filter(m => m.purpose === 'discussion' && m.sender !== 'user');
   let action: RoomControl['action'] = { type: 'none' };
   let text = `[示範 ${r.actor}] 依目前題目與限制補充分析。這是隔離測試回覆，沒有真實 AI 推論。`;
@@ -28,17 +36,30 @@ export function fakeRoomResponse(request: TurnRequest): string {
   if (action.type === 'propose' || action.type === 'finish') action = { ...action, delivery: { status: 'complete', kind: 'undetermined', basis: ['示範模式只能驗證流程，沒有可支持實際主題判斷的真實資料。'] } };
   if (action.type === 'confirm') action = { ...action, review: { adequate: true, reason: '示範審查：此結果明確交代示範模式無法判斷實際主題；不代表真實模型品質驗證。', gaps: [] } };
   if (action.type === 'propose') action.result = '示範模式無法判斷此主題的實際答案：目前只有測試回覆，沒有真實 AI 分析或查證。';
+  if (r.singleSentence) {
+    text = r.openingSpeaker ? '本次為示範討論，請第一位發言者開始交流。' : '這是隔離測試回覆，只能驗證討論流程，沒有真實 AI 推論。';
+    if (action.type === 'propose' || action.type === 'finish') {
+      text = '示範模式只能驗證流程，沒有真實分析，因此無法判斷此主題的答案。';
+      action = { ...action, result: text, dissent: [], unresolved: ['沒有真實分析'], delivery: { status: 'complete', kind: 'undetermined', basis: ['沒有真實分析'] } };
+    } else if (action.type === 'confirm') {
+      text = '此示範結果已說明沒有真實分析的限制，可用於驗證結論審查流程。';
+      action = { ...action, review: { adequate: true, reason: '已說明沒有真實分析的限制', gaps: [] } };
+    } else if (action.type === 'speak') text = action.task;
+    else if (action.type === 'pause') text = action.reason;
+  }
   const references: RoomControl['references'] = r.actor === 'moderator' || r.purpose === 'summary' ? [] : r.messages.filter(m => m.sender === 'user').slice(-99).map(m => ({ messageId: m.id, disposition: 'addressed', reason: 'Fixture response; no live validation.' }));
   const peer = publicAnswers.findLast(m => m.sender !== r.actor && m.recipient === 'all');
   if (peer && r.actor !== 'moderator' && r.purpose === 'discussion') references.push({ messageId: peer.id, disposition: 'checked', reason: 'Fixture peer check; not factual verification.' });
+  if (r.singleSentence) for (const reference of references) reference.reason = text;
   const work = r.execution?.policyVersion === 1 && r.purpose !== 'monitor' && !(r.actor === 'moderator' && r.moderatorMode !== 'judge' && r.purpose === 'moderation') ? { checkpoint: { answer: text, reasons: ['示範資料只驗證流程。'], dissent: [], unknowns: ['尚未驗證真實模型品質。'], sources: [request.messageId] },
     completedTasks: r.execution.currentTaskKey ? [{ key: r.execution.currentTaskKey, sources: [request.messageId] }] : [] } : undefined;
+  if (r.singleSentence && work) { work.checkpoint.reasons = [text]; work.checkpoint.unknowns = []; }
   return `${text}\n${ROOM_CONTROL_START}\n${JSON.stringify({ version: 3, taskVersion: r.taskVersion, grantId: r.grantId, continuation, action, references, ...(work ? { work } : {}) })}\n${ROOM_CONTROL_END}`;
 }
 
 export class RoomFakeAdapter implements AgentAdapter {
   readonly backend = 'fake' as const;
-  private readonly memories = new Map<string, RoomMessage[]>();
+  private readonly memories = new Map<string, NonNullable<TurnRequest['room']>['messages']>();
   constructor(readonly id: ProviderId, private readonly respond = fakeRoomResponse, private readonly delayMs = 5) {}
   async *run(request: TurnRequest): AsyncGenerator<AgentEvent> {
     request.signal.throwIfAborted();

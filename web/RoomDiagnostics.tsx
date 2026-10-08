@@ -5,7 +5,7 @@ import { hhmm } from './RoomParts.js';
 import { seatOf, type SeatView } from './seats.js';
 
 type Seats = Record<string, SeatView>;
-const purposes = { get discussion() { return translate("發言"); }, get moderation() { return translate("主持"); }, get monitor() { return translate("監看"); }, get summary() { return translate("整理"); } };
+const purposes = { get "selection-options"() { return translate("產生選項與標準"); }, get "selection-rating"() { return translate("獨立評分"); }, get discussion() { return translate("發言"); }, get moderation() { return translate("主持"); }, get monitor() { return translate("監看"); }, get summary() { return translate("整理"); } };
 const statuses = { get prepared() { return translate("進行中"); }, get completed() { return translate("完成"); }, get cancelled() { return translate("已中止"); }, get failed() { return translate("失敗"); } };
 const seconds = (ms: number | null) => ms === null ? '—' : `${(ms / 1000).toFixed(1)} s`;
 const failureLabels = { 'active-writer': '工作階段被其他程序占用', 'thread-not-found': '工作階段不存在', rejected: '供應商拒絕請求' };

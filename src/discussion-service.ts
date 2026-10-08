@@ -4,6 +4,7 @@ import { RoomController, type InitialRoomHistory } from './room-controller.js';
 import { AppError, type Discussion, type DiscussionInput, type AgentId, type RunEvent } from './domain.js';
 import type { ParticipantId, RoomDiscussion, RoomInput } from './room-contract.js';
 import { assertEditable, type ManagementAction, type IndexQuery } from './management.js';
+import type { PreparedAttachment } from './attachments.js';
 
 export type AnyDiscussion = Discussion | RoomDiscussion;
 export class DiscussionService {
@@ -54,12 +55,12 @@ export class DiscussionService {
       return this.legacy.create(id, input);
     });
   }
-  createRoom(id: string, input: RoomInput, history?: InitialRoomHistory) {
-    return this.admit(() => this.createRoomNow(id, input, history));
+  createRoom(id: string, input: RoomInput, history?: InitialRoomHistory, attachments: PreparedAttachment[] = []) {
+    return this.admit(() => this.createRoomNow(id, input, history, attachments));
   }
-  private async createRoomNow(id: string, input: RoomInput, history?: InitialRoomHistory) {
+  private async createRoomNow(id: string, input: RoomInput, history?: InitialRoomHistory, attachments: PreparedAttachment[] = []) {
     this.assertDestination(id, 'room');
-    return this.rooms.create(id, input, history);
+    return this.rooms.create(id, input, history, attachments);
   }
   async start(id: string, operationId: string, purpose: 'discussion' | 'roles' | 'summary' = 'discussion') {
     return this.admit(async () => {
@@ -81,8 +82,9 @@ export class DiscussionService {
     const s = this.rooms.get(id);
     return this.rooms.configure(id, { ...settings, ...(maxModeratorCalls === undefined ? {} : { limits: { ...s.limits, ...settings.limits, maxModeratorCalls } }) });
   }
-  send(id: string, messageId: string, text: string, recipient: ParticipantId | 'both' | 'all', inReplyTo: string | null = null) {
-    if (this.rooms.has(id)) return this.rooms.send(id, messageId, text, recipient === 'both' ? 'all' : recipient, inReplyTo);
+  send(id: string, messageId: string, text: string, recipient: ParticipantId | 'both' | 'all', inReplyTo: string | null = null, attachments: PreparedAttachment[] = []) {
+    if (this.rooms.has(id)) return this.rooms.send(id, messageId, text, recipient === 'both' ? 'all' : recipient, inReplyTo, attachments);
+    if (attachments.length) throw new AppError('ATTACHMENT_UNSUPPORTED', 'Attachments require a version 3 discussion or debate.', 400);
     if (!['codex', 'claude', 'both'].includes(recipient)) throw new AppError('INVALID_REFERENCE', 'Recipient not supported by legacy discussion.');
     return this.legacy.send(id, messageId, text, recipient as AgentId | 'both', inReplyTo);
   }
