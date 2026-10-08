@@ -4,6 +4,27 @@ This is a dated record of observed checks, not a development backlog. Run only
 checks relevant to the current task; see [CONTRIBUTING.md](CONTRIBUTING.md).
 Contracts belong to their owning documents listed in [AGENTS.md](AGENTS.md).
 
+## Complete scroll guard and publication gate (2026-10-08)
+
+Scope: v0.1.2 addresses the corresponding v3 race discovered by the v0.1.1
+main-branch macOS run. That branch run moved scrollTop 100 to 9490 even though
+the separate release matrix passed. A deterministic panel update before delivery
+of a scroll event reproduced the same 9490 result locally before this correction.
+
+Both views now check the actual reading position against their last followed
+position before automatic following, preserving the 80-pixel follow margin and
+browser clamping after content/viewport shrinkage. Seven guard unit cases,
+typechecks and isolated compilation passed. The four scrolling browser scenarios
+passed three consecutive rounds, and passed again after sharing the guard and
+adding boundary coverage. Repeated browser fixtures now use unique topics.
+
+Publication now also requires successful main-branch verification for the exact
+checked-out tag commit, including manually selected tags. It waits at most five
+minutes and rejects missing/failed branch verification with existing Actions read
+permissions. The query correctly selected the previous candidate's failed run.
+The new tag's native Actions results establish full coverage/browser/installation
+verification and publication; local targeted checks alone do not establish them.
+
 ## Scroll freeze and action runtime correction (2026-10-08)
 
 Scope: v0.1.1 fixes the intermittent legacy-view scroll freeze failure observed

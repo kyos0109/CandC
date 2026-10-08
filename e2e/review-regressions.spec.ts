@@ -79,7 +79,7 @@ for (const version of [2, 3]) test(`connection navigation preserves v${version} 
 
 for (const version of [2, 3]) test(`connection navigation preserves v${version} scroll following and reading position during background replies`, async ({ page }) => {
   const errors = consoleErrors(page); await page.setViewportSize({ width: 1280, height: 900 });
-  const topic = `Background scroll v${version}`;
+  const topic = `Background scroll v${version} ${crypto.randomUUID()}`;
   let id: string;
   if (version === 2) id = await createLegacy(page, { input: { topic } });
   else {
@@ -111,8 +111,17 @@ for (const version of [2, 3]) test(`connection navigation preserves v${version} 
   };
   await replyWhileHidden();
   await expect.poll(() => viewport.evaluate(element => element.scrollHeight - element.clientHeight - element.scrollTop)).toBeLessThan(2);
-  await viewport.evaluate(element => { element.scrollTop = 100; });
+  await viewport.evaluate(async (element, version) => {
+    await new Promise<void>(resolve => requestAnimationFrame(() => {
+      element.scrollTop = 100;
+      // A panel update commits before the scroll event from this frame. The
+      // v3 layout effect must observe the reader's move even with stale state.
+      if (version === 3) (document.querySelector('button[aria-label="閱讀設定"]') as HTMLButtonElement).click();
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+    }));
+  }, version);
   await expect.poll(() => viewport.evaluate(element => element.scrollTop)).toBe(100);
+  if (version === 3) await closePanel(page);
   await page.getByRole('button', { name: '連線與設定', exact: true }).click();
   await page.getByRole('button', { name: '返回討論', exact: true }).click();
   await expect.poll(() => viewport.evaluate(element => element.scrollTop)).toBe(100);

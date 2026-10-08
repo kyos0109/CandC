@@ -128,7 +128,7 @@ Git history, credentials, conversations and workspaces. Packaging does not publi
 A local candidate needs no repository; the adjacent `SHA256SUMS` is mandatory:
 
 ```sh
-node scripts/install.mjs --archive .cache/release/v0.1.1/candc-v0.1.1.tar.gz --install-dir .cache/local-install --no-browser
+node scripts/install.mjs --archive .cache/release/v0.1.2/candc-v0.1.2.tar.gz --install-dir .cache/local-install --no-browser
 ```
 
 Use the version actually packaged. A local installation needs `update --repo OWNER/REPO`
@@ -144,6 +144,9 @@ and archive attacks.
 Pushing a version tag such as `v0.1.0` starts **Verify and release**. It validates the
 tag/package version, runs the complete checks on Windows, macOS and Ubuntu, then
 verifies asset checksums and publishes the release only if every platform passes.
+The exact commit must also pass the main-branch Cross-platform verification workflow;
+push the reviewed commit to main before or together with its tag. The publication job
+waits up to five minutes for that result and refuses missing or failed verification.
 Failed verification produces no release. Manual runs default to a draft; enable
 `publish` explicitly for a formal release. Prerelease tags remain marked as prereleases.
 After publication, test actual download commands on clean target machines. CI baselines

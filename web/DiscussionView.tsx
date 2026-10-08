@@ -1,4 +1,5 @@
 import { translate } from './i18n.js';
+import { movedAwayFromLatest } from './scroll-follow';
 import { PerformancePanel } from './PerformancePanel';
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { MessageContent } from './MessageContent';
@@ -39,19 +40,25 @@ export function DiscussionView({ state, progress, busy, perform, onFork, reading
   }, [text, visible]);
   const messageViewport = useRef<HTMLDivElement>(null);
   const followLatest = useRef(true);
+  const followedPosition = useRef(0);
   const displayedContent = useRef<readonly unknown[]>([]);
   const [newContent, setNewContent] = useState(false);
   const jumpToLatest = () => {
     const viewport = messageViewport.current;
-    if (viewport) viewport.scrollTop = viewport.scrollHeight;
+    if (viewport) { viewport.scrollTop = viewport.scrollHeight; followedPosition.current = viewport.scrollTop; }
     followLatest.current = true;
     setNewContent(false);
+  };
+  const shouldFollow = () => {
+    const viewport = messageViewport.current;
+    if (viewport && movedAwayFromLatest(viewport, followedPosition.current)) followLatest.current = false;
+    return followLatest.current;
   };
   useLayoutEffect(() => {
     if (!visible) return;
     const content = [state.messages.length, progress?.preview, progress?.characters, state.status];
     const changed = content.some((value, index) => value !== displayedContent.current[index]); displayedContent.current = content;
-    if (followLatest.current) jumpToLatest();
+    if (shouldFollow()) jumpToLatest();
     else if (changed) setNewContent(true);
   }, [visible, state.messages.length, progress?.preview, progress?.characters, state.status]);
   useEffect(() => {
@@ -62,7 +69,7 @@ export function DiscussionView({ state, progress, busy, perform, onFork, reading
       cancelAnimationFrame(frame);
       // Resize callbacks can precede the scroll event from this same frame.
       // Wait for that event before deciding whether the reader still follows.
-      frame = requestAnimationFrame(() => { if (followLatest.current) jumpToLatest(); });
+      frame = requestAnimationFrame(() => { if (shouldFollow()) jumpToLatest(); });
     });
     observer.observe(viewport);
     return () => { observer.disconnect(); cancelAnimationFrame(frame); };
@@ -93,7 +100,7 @@ export function DiscussionView({ state, progress, busy, perform, onFork, reading
     <button className="focus-current" aria-label={translate("查看議題")} aria-expanded={panel === 'issues'} onClick={() => togglePanel('issues')}><span className="focus-label">{translate("目前議題")}{currentIssue && state.v2 ? ` ${state.v2.issues.indexOf(currentIssue) + 1}/${state.v2.issues.length}` : ''}</span><strong>{state.v2?.completed ? translate("整場結果已確認") : currentIssue ? currentIssue.title : state.v2 ? translate("選取下一題或確認整場結果") : translate("舊版討論 · 查看原始題目")}</strong><span className="focus-meter"><span className="meter-bar"><b style={{ width: `${Math.min(100, state.round / state.limits.maxRounds * 100)}%` }}/></span>{translate("第 {0} / {1} 輪", state.round, state.limits.maxRounds)}</span><span className="focus-time">{clock(state.elapsedMs)} / {clock(state.limits.maxDurationMs)}</span><span className="focus-go">{translate("查看 ›")}</span></button>
     {!state.rolesConfirmed && <div className="notice warning">{translate("請先確認雙方立場。")}<button onClick={() => setPanel('participants')}>{translate("查看立場")}</button></div>}
     <div className="conversation-region">
-    <div className="messages" ref={messageViewport} tabIndex={0} onScroll={event => { if (!visible) return; const viewport = event.currentTarget; followLatest.current = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 80; if (followLatest.current) setNewContent(false); }} aria-label={translate("對話內容")} aria-live="polite">{timelineDividers(state.messages).map((divider, index) => { const message = state.messages[index]!; return <Fragment key={message.id}>{divider}<ConversationMessage message={message} messages={state.messages} identity={identity} demonstration={state.backend === 'fake'} readingMode={readingMode} canReply={!readOnly && !terminal && !state.storage} jump={jump} draftReply={draftReply}/></Fragment>; })}
+    <div className="messages" ref={messageViewport} tabIndex={0} onScroll={event => { if (!visible) return; const viewport = event.currentTarget; followLatest.current = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 80; if (followLatest.current) { followedPosition.current = viewport.scrollTop; setNewContent(false); } }} aria-label={translate("對話內容")} aria-live="polite">{timelineDividers(state.messages).map((divider, index) => { const message = state.messages[index]!; return <Fragment key={message.id}>{divider}<ConversationMessage message={message} messages={state.messages} identity={identity} demonstration={state.backend === 'fake'} readingMode={readingMode} canReply={!readOnly && !terminal && !state.storage} jump={jump} draftReply={draftReply}/></Fragment>; })}
     {active && <article className={`message pending ${pendingSpeaker}`}><Avatar participant={identity(pendingSpeaker)}/><div className="message-main"><div className="message-meta"><strong>{identity(pendingSpeaker).name}</strong><span className="pulse">{progress?.characters || progress?.preview || progress?.tool ? translate("正在生成 · 尚未保存") : translate("等待回覆 · 尚未保存")}{progress?.tool ? translate(" · 查詢資料") : ''}… {progress?.characters ? translate("{0} 字元", progress.characters.toLocaleString()) : ''}</span></div><div className="message-body">{progress?.preview ? <div className="preview"><MessageContent text={progress.preview}/></div> : <span className="typing" aria-hidden="true"><b/><b/><b/></span>}</div></div></article>}</div>
     {newContent && <button className="latest-message" onClick={jumpToLatest}>{translate("有新內容 · 回到最新訊息 ↓")}</button>}
     </div>

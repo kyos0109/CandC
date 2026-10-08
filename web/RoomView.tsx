@@ -1,4 +1,5 @@
 import { translate, useLocale } from './i18n.js';
+import { movedAwayFromLatest } from './scroll-follow';
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { RoomDiscussion, RoomMessage as Message } from '../src/room-contract';
 import type { Progress } from './DiscussionView';
@@ -32,14 +33,22 @@ export function RoomView({ state, progress, busy, perform, panel, setPanel, hist
   const [tab, setTab] = useState<Tab>('chat'), [text, setText] = useState(''), [recipient, setRecipient] = useState('all'), [reply, setReply] = useState<string | null>(null), [autoOpened, setAutoOpened] = useState(false), [newContent, setNewContent] = useState(false);
   const viewport = useRef<HTMLDivElement>(null), input = useRef<HTMLTextAreaElement>(null), follow = useRef(true), sending = useRef(false);
   const displayedContent = useRef<readonly unknown[]>([]);
+  const followedPosition = useRef(0);
   const live = liveProgress(progress, state.messages);
   const speaking = active ? live?.speaker ?? state.room.currentSpeaker ?? null : null, outcome = state.room.outcome, proposal = state.room.proposal;
-  const latest = () => { if (viewport.current) viewport.current.scrollTop = viewport.current.scrollHeight; follow.current = true; setNewContent(false); };
+  const latest = () => { if (viewport.current) { viewport.current.scrollTop = viewport.current.scrollHeight; followedPosition.current = viewport.current.scrollTop; } follow.current = true; setNewContent(false); };
+  const shouldFollow = () => {
+    const v = viewport.current;
+    // Detect an upward move even before its scroll event, while allowing the
+    // browser to clamp the position when content or viewport geometry shrinks.
+    if (v && movedAwayFromLatest(v, followedPosition.current)) follow.current = false;
+    return follow.current;
+  };
   useLayoutEffect(() => {
     if (!visible || tab !== 'chat') return;
     const content = [state.messages.length, state.room.commands.length, progress?.preview, outcome?.result, state.status];
     const changed = content.some((value, index) => value !== displayedContent.current[index]); displayedContent.current = content;
-    if (follow.current) latest(); else if (changed) setNewContent(true);
+    if (shouldFollow()) latest(); else if (changed) setNewContent(true);
   }, [visible, panel, state.messages.length, state.room.commands.length, progress?.preview, outcome?.result, state.status, tab]);
   // The participants dock is open by default on a wide screen and remembers when the user closes it. It never takes focus.
   useEffect(() => { if (visible && !overlay && panel === null && localStorage.getItem('candc-roster') !== 'closed') { setAutoOpened(true); setPanel('participants'); } }, [state.id, overlay, visible]);
@@ -75,7 +84,7 @@ export function RoomView({ state, progress, busy, perform, panel, setPanel, hist
     {tab === 'diagnostics' && <RoomDiagnostics state={state} seats={seats}/>}
     {tab === 'chat' && <>
       {grant && <StageGrant key={grant.id} grant={grant} state={state} seats={seats} live={speaking === grant.target}/>}
-      <div className="conversation-region"><div className="messages" aria-label={translate("對話內容")} aria-live="polite" tabIndex={0} ref={viewport} onScroll={e => { if (!visible) return; const v = e.currentTarget; follow.current = v.scrollHeight - v.scrollTop - v.clientHeight < 80; if (follow.current) setNewContent(false); }}>
+      <div className="conversation-region"><div className="messages" aria-label={translate("對話內容")} aria-live="polite" tabIndex={0} ref={viewport} onScroll={e => { if (!visible) return; const v = e.currentTarget; follow.current = v.scrollHeight - v.scrollTop - v.clientHeight < 80; if (follow.current) { followedPosition.current = v.scrollTop; setNewContent(false); } }}>
         {items.map(item => item.kind === 'event' ? <RoomEventRow key={item.id} event={item} seats={seats}/> : <Fragment key={item.message.id}>{dividers.get(item.message.id)}<RoomMessage message={item.message} seats={seats} messages={state.messages} demo={state.backend === 'fake'} proposalId={proposal?.id ?? null} readingMode={readingMode} canReply={!readOnly && !terminal && !state.storage} onReply={draftReply} jump={jump}/></Fragment>)}
         {active && <RoomPending seat={seatOf(seats, speakerId)} preview={live?.preview}/>}
         <OutcomeCard state={state} seats={seats} onOpen={() => setTab('result')}/>

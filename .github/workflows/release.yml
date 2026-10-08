@@ -19,6 +19,8 @@ concurrency:
   cancel-in-progress: false
 jobs:
   verify:
+    outputs:
+      commit: ${{ steps.release_identity.outputs.commit }}
     strategy:
       fail-fast: false
       matrix:
@@ -36,9 +38,10 @@ jobs:
           node-version: '24'
           cache: npm
       - name: Validate existing tag and package version
+        id: release_identity
         env:
           CANDC_RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
-        run: node -e "const fs=require('node:fs'),cp=require('node:child_process'); const tag=process.env.CANDC_RELEASE_TAG; if(!/^v\d+\.\d+\.\d+(-[A-Za-z0-9]+([.-][A-Za-z0-9]+)*)?$/.test(tag)||tag!=='v'+JSON.parse(fs.readFileSync('package.json')).version) process.exit(1); cp.execFileSync('git',['show-ref','--verify','refs/tags/'+tag]);"
+        run: node -e "const fs=require('node:fs'),cp=require('node:child_process'); const tag=process.env.CANDC_RELEASE_TAG; if(!/^v\d+\.\d+\.\d+(-[A-Za-z0-9]+([.-][A-Za-z0-9]+)*)?$/.test(tag)||tag!=='v'+JSON.parse(fs.readFileSync('package.json')).version) process.exit(1); cp.execFileSync('git',['show-ref','--verify','refs/tags/'+tag]); fs.appendFileSync(process.env.GITHUB_OUTPUT,'commit='+cp.execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim()+'\n');"
       - run: npm ci --ignore-scripts
       - run: npx playwright install --with-deps chromium
       - run: npm run typecheck
@@ -66,11 +69,27 @@ jobs:
   release:
     needs: verify
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     permissions:
       contents: write
       actions: read
     steps:
+      - name: Require successful main-branch verification for this exact commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          CANDC_RELEASE_SHA: ${{ needs.verify.outputs.commit }}
+        run: |
+          passed=false
+          for attempt in $(seq 1 30); do
+            result=$(gh api "repos/$GH_REPO/actions/workflows/ci.yml/runs?head_sha=$CANDC_RELEASE_SHA&event=push&branch=main&per_page=100" --jq '.workflow_runs | sort_by(.id) | last | [.status // "missing", .conclusion // "pending"] | join(":")')
+            case "$result" in
+              completed:success) passed=true; break ;;
+              completed:*|missing:*) echo "Main-branch verification did not pass: $result"; exit 1 ;;
+              *) echo "Waiting for main-branch verification: $result"; sleep 10 ;;
+            esac
+          done
+          test "$passed" = true
       - name: Download candidate and create release
         env:
           GH_TOKEN: ${{ github.token }}
