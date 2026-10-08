@@ -50,16 +50,16 @@ Install **Node.js 24 and npm** first. No Git or development tools are required.
 macOS/Linux:
 
 ```sh
-curl -fsSL https://github.com/OWNER/REPO/releases/latest/download/install.sh | sh
+curl -fsSL https://github.com/kyos0109/CandC/releases/latest/download/install.sh | sh
 ```
 
 Windows PowerShell:
 
 ```powershell
-irm https://github.com/OWNER/REPO/releases/latest/download/install.ps1 | iex
+irm https://github.com/kyos0109/CandC/releases/latest/download/install.ps1 | iex
 ```
 
-Replace `OWNER/REPO` with the public release repository once published.
+Release assets become available after all three platforms pass the release workflow.
 
 Release installation downloads compiled files, installs locked runtime dependencies,
 and starts the app.
@@ -68,9 +68,8 @@ commands for `status`, `update` and `doctor`. Updates require a stopped server a
 preserve history and agent workspaces. See [installation and deployment](docs/INSTALLATION.md)
 for shell/PowerShell commands, custom paths, headless use and failure recovery.
 
-No public repository/download URL is configured in this checkout yet. The documented
-`OWNER/REPO` commands are templates until a Release is published. Native verification
-limits are recorded in [Validation](VALIDATION.md).
+Release verification and publication run in [GitHub Actions](https://github.com/kyos0109/CandC/actions).
+Native verification limits are recorded in [Validation](VALIDATION.md).
 
 ## Quick start on Windows
 

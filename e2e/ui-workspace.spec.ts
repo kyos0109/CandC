@@ -33,6 +33,9 @@ for (const theme of ['light', 'dark']) for (const size of [{ width: 1440, height
     expect(measurements.overflow).toBe(false); expect(measurements.composerBottom).toBeLessThanOrEqual(size.height); expect(measurements.font).toBe('16px');
     await page.locator('.messages').evaluate(el => { el.scrollTop = 0; });
     await page.getByLabel('加入討論').fill('尚未送出的草稿');
+    // Native fonts can wrap the empty placeholder differently. Compare the same
+    // draft on both sides of opening the inspector, after composer auto-sizing.
+    measurements = await bounds(page);
     await page.getByRole('button', { name: '查看議題' }).click();
     await expect(page.locator('.inspector')).toBeVisible();
     await expect(page.locator('.issue-row')).toContainText('完整原始題目');

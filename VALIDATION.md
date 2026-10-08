@@ -4,6 +4,25 @@ This is a dated record of observed checks, not a development backlog. Run only
 checks relevant to the current task; see [CONTRIBUTING.md](CONTRIBUTING.md).
 Contracts belong to their owning documents listed in [AGENTS.md](AGENTS.md).
 
+## Public release automation (2026-10-08)
+
+Scope: configure the official installation URLs and publish version tags only after
+Windows, macOS and Ubuntu verification succeeds. Manual workflow runs default to drafts.
+The publication checkout uses the existing public baseline; local histories, credentials
+and the original working tree are excluded from the release commit.
+
+Observed before pushing: backend/test typecheck, 28 installer/public-source tests
+(one POSIX case skipped on Windows), isolated compilation and all 17 affected bubble
+and workspace browser tests passed. The public-source allowlist and redacted Gitleaks
+scan passed. Normal builds, real discussions and provider authentication were untouched.
+
+The existing native CI failures compared inspector height before/after changing the
+draft, or measured overflow before the dock-to-overlay resize effect completed.
+Tests now compare the same draft and wait for responsive layout; original height,
+contrast, viewport and no-overflow assertions remain. Native release verification and
+publication results belong to the tagged GitHub Actions run; these local checks alone
+do not establish a published release or successful native execution.
+
 ## Deferred frontend view loading (2026-10-06)
 
 Scope: load `RoomView`, `DiscussionView` and `ConnectionsPage` on first use from

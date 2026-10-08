@@ -66,7 +66,8 @@ for (const theme of ['light', 'dark']) test(`${theme}: seats have their own colo
   }
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  expect(await page.locator('.messages').evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+  // Resizing also switches the participants dock to an overlay in a React effect.
+  await expect.poll(() => page.locator('.messages').evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
 });
 
 test('every provider and the moderator get a different bubble colour, and the moderator a different shape', async ({ page }) => {

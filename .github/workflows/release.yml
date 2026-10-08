@@ -1,15 +1,21 @@
-name: Prepare release draft
+name: Verify and release
 on:
+  push:
+    tags: ['v*']
   workflow_dispatch:
     inputs:
       tag:
         description: Existing release tag matching package.json (vX.Y.Z)
         required: true
         type: string
+      publish:
+        description: Publish after all three platforms pass
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
-  group: release-${{ inputs.tag }}
+  group: release-${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false
 jobs:
   verify:
@@ -22,7 +28,7 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: refs/tags/${{ inputs.tag }}
+          ref: refs/tags/${{ inputs.tag || github.ref_name }}
           fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -31,7 +37,7 @@ jobs:
           cache: npm
       - name: Validate existing tag and package version
         env:
-          CANDC_RELEASE_TAG: ${{ inputs.tag }}
+          CANDC_RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
         run: node -e "const fs=require('node:fs'),cp=require('node:child_process'); const tag=process.env.CANDC_RELEASE_TAG; if(!/^v\d+\.\d+\.\d+(-[A-Za-z0-9]+([.-][A-Za-z0-9]+)*)?$/.test(tag)||tag!=='v'+JSON.parse(fs.readFileSync('package.json')).version) process.exit(1); cp.execFileSync('git',['show-ref','--verify','refs/tags/'+tag]);"
       - run: npm ci --ignore-scripts
       - run: npx playwright install --with-deps chromium
@@ -57,7 +63,7 @@ jobs:
           path: .cache/release-candidate/*
           if-no-files-found: error
           retention-days: 7
-  draft:
+  release:
     needs: verify
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -65,12 +71,23 @@ jobs:
       contents: write
       actions: read
     steps:
-      - name: Download candidate and create draft (does not publish)
+      - name: Download candidate and create release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          CANDC_RELEASE_TAG: ${{ inputs.tag }}
+          CANDC_RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
           CANDC_RUN_ID: ${{ github.run_id }}
+          CANDC_PUBLISH: ${{ github.event_name == 'push' || inputs.publish }}
         run: |
           gh run download "$CANDC_RUN_ID" --name release-candidate --dir candidate
-          gh release create "$CANDC_RELEASE_TAG" candidate/* --verify-tag --draft --title "CandC $CANDC_RELEASE_TAG" --notes "Cross-platform runtime, installation scripts and SHA-256 checksums. Review the draft before publishing. Requires Node.js 24."
+          cd candidate
+          sha256sum --check SHA256SUMS
+          flags=(--draft)
+          if [[ "$CANDC_PUBLISH" == "true" ]]; then
+            flags=(--latest)
+          fi
+          if [[ "$CANDC_RELEASE_TAG" == *-* ]]; then
+            flags=(--prerelease)
+            if [[ "$CANDC_PUBLISH" != "true" ]]; then flags+=(--draft); fi
+          fi
+          gh release create "$CANDC_RELEASE_TAG" ./* --verify-tag "${flags[@]}" --title "CandC $CANDC_RELEASE_TAG" --notes "Cross-platform runtime, installation scripts and SHA-256 checksums. Verified on Windows, macOS and Ubuntu. Requires Node.js 24."

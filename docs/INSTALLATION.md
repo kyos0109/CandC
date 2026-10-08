@@ -9,21 +9,22 @@ and sign in to official Codex/Claude CLIs separately when you want live AI.
 
 ## Install a published release
 
-**Publishing status:** this checkout has no configured public repository URL. Replace
-`OWNER/REPO` below after publishing a Release. These are templates, not verified live URLs.
+Official repository: [kyos0109/CandC](https://github.com/kyos0109/CandC).
+Release downloads become available after Windows, macOS and Linux verification passes
+in [the release workflow](https://github.com/kyos0109/CandC/actions/workflows/release.yml).
 Release assets are `install.sh`, `install.ps1`, `install.mjs`, `SHA256SUMS` and
 `candc-vX.Y.Z.tar.gz`. The packaged scripts contain the actual repository name.
 
 macOS/Linux:
 
 ```sh
-curl -fsSL https://github.com/OWNER/REPO/releases/latest/download/install.sh | sh
+curl -fsSL https://github.com/kyos0109/CandC/releases/latest/download/install.sh | sh
 ```
 
 Windows PowerShell:
 
 ```powershell
-irm https://github.com/OWNER/REPO/releases/latest/download/install.ps1 | iex
+irm https://github.com/kyos0109/CandC/releases/latest/download/install.ps1 | iex
 ```
 
 Both commands download and run the standalone installer immediately, without cloning
@@ -31,11 +32,11 @@ or saving a script in the current directory. PowerShell returns to the same term
 after success and throws an error on failure. To pass options:
 
 ```sh
-curl -fsSL https://github.com/OWNER/REPO/releases/latest/download/install.sh | sh -s -- --no-start --install-dir "$HOME/CandC"
+curl -fsSL https://github.com/kyos0109/CandC/releases/latest/download/install.sh | sh -s -- --no-start --install-dir "$HOME/CandC"
 ```
 
 ```powershell
-& ([scriptblock]::Create((irm https://github.com/OWNER/REPO/releases/latest/download/install.ps1))) -NoStart -InstallDir "$env:LOCALAPPDATA\CandC"
+& ([scriptblock]::Create((irm https://github.com/kyos0109/CandC/releases/latest/download/install.ps1))) -NoStart -InstallDir "$env:LOCALAPPDATA\CandC"
 ```
 
 The script pins one release, verifies the downloaded installer/archive against its
@@ -140,8 +141,11 @@ the repository so it cannot inherit repository development dependencies.
 It preserves failure artifacts. Unit tests cover update failures, ownership, locks
 and archive attacks.
 
-The manual **Prepare release draft** workflow validates an existing version tag on
-Windows, macOS and Ubuntu, then uploads a draft. Publishing is a maintainer action.
+Pushing a version tag such as `v0.1.0` starts **Verify and release**. It validates the
+tag/package version, runs the complete checks on Windows, macOS and Ubuntu, then
+verifies asset checksums and publishes the release only if every platform passes.
+Failed verification produces no release. Manual runs default to a draft; enable
+`publish` explicitly for a formal release. Prerelease tags remain marked as prereleases.
 After publication, test actual download commands on clean target machines. CI baselines
 are Windows x64, Apple Silicon macOS and Ubuntu x64; other architectures/distributions
 need separate verification. CI configuration is not a completed run. Real Codex/Claude
