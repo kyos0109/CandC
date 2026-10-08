@@ -57,9 +57,15 @@ export function DiscussionView({ state, progress, busy, perform, onFork, reading
   useEffect(() => {
     const viewport = messageViewport.current;
     if (!visible || !viewport) return;
-    const observer = new ResizeObserver(() => { if (followLatest.current) jumpToLatest(); });
+    let frame = 0;
+    const observer = new ResizeObserver(() => {
+      cancelAnimationFrame(frame);
+      // Resize callbacks can precede the scroll event from this same frame.
+      // Wait for that event before deciding whether the reader still follows.
+      frame = requestAnimationFrame(() => { if (followLatest.current) jumpToLatest(); });
+    });
     observer.observe(viewport);
-    return () => observer.disconnect();
+    return () => { observer.disconnect(); cancelAnimationFrame(frame); };
   }, [visible]);
   useEffect(() => { setRoles(state.roles); }, [state.id, state.roles.codex, state.roles.claude]);
   useEffect(() => { setLimits(state.limits); }, [state.id, state.limits.maxRounds, state.limits.maxDurationMs, state.limits.turnTimeoutMs]);

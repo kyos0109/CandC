@@ -66,6 +66,8 @@ handoffs are retained in Git history, not active development instructions.
   full text. Source jumps reveal and focus the eligible original message without sending.
 - Follow output only near the bottom. Scrolling up freezes following and exposes a
   return-to-latest action. Quoting and reading-size changes must not lose the user's place.
+  Viewport resize following waits for pending scroll events; hiding or unmounting the
+  view cancels the pending resize callback.
 - Distinguish generating, saved, cancelled, paused, partial and unconfirmed storage.
   A manual pause is not a completed conclusion. Completion uses the reviewed stored
   outcome, retaining dissent, gaps and unknowns; individual prose is not automatic consensus.

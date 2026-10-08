@@ -128,7 +128,7 @@ Git history, credentials, conversations and workspaces. Packaging does not publi
 A local candidate needs no repository; the adjacent `SHA256SUMS` is mandatory:
 
 ```sh
-node scripts/install.mjs --archive .cache/release/v0.1.0/candc-v0.1.0.tar.gz --install-dir .cache/local-install --no-browser
+node scripts/install.mjs --archive .cache/release/v0.1.1/candc-v0.1.1.tar.gz --install-dir .cache/local-install --no-browser
 ```
 
 Use the version actually packaged. A local installation needs `update --repo OWNER/REPO`

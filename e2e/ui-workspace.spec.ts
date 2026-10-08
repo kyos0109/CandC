@@ -72,6 +72,28 @@ for (const theme of ['light', 'dark']) for (const size of [{ width: 1440, height
   });
 }
 
+test('scrolling up during viewport resize preserves the reading position', async ({ page }) => {
+  await create(page);
+  const viewport = page.locator('.messages');
+  await viewport.evaluate(async el => {
+    el.scrollTop = el.scrollHeight;
+    await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    // ResizeObserver runs after this frame's callbacks, before the scroll event
+    // from this assignment. The observer must not use stale follow state.
+    await new Promise<void>(resolve => requestAnimationFrame(() => {
+      el.scrollTop = 0;
+      (el as HTMLElement).style.maxHeight = `${el.clientHeight - 1}px`;
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+    }));
+  });
+  expect(await viewport.evaluate(el => el.scrollTop)).toBe(0);
+  await viewport.evaluate(async el => {
+    (el as HTMLElement).style.maxHeight = '';
+    await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+  });
+  expect(await viewport.evaluate(el => el.scrollTop)).toBe(0);
+});
+
 test('drafts, source focus, recipient scope, name metadata, persistence and scroll freeze', async ({ page }) => {
   test.setTimeout(50_000); const id = await create(page);
   const state = async (): Promise<Discussion> => (await page.request.get('/api/discussions/' + id)).json();

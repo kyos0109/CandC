@@ -4,6 +4,30 @@ This is a dated record of observed checks, not a development backlog. Run only
 checks relevant to the current task; see [CONTRIBUTING.md](CONTRIBUTING.md).
 Contracts belong to their owning documents listed in [AGENTS.md](AGENTS.md).
 
+## Scroll freeze and action runtime correction (2026-10-08)
+
+Scope: v0.1.1 fixes the intermittent legacy-view scroll freeze failure observed
+in the macOS branch CI for v0.1.0, even though that tag's release verification passed.
+A deterministic browser regression scrolls upward and resizes the viewport within
+one animation frame. Before the fix it expected scrollTop 0 but received 329.
+ResizeObserver following now waits for pending scroll events and cancels its
+scheduled callback when the view is hidden or unmounted. Existing exact position,
+return-to-latest and v2/v3 background navigation assertions remain unchanged.
+
+Observed locally: typechecks, isolated compilation, four targeted scrolling cases
+and all 83 browser cases passed. Dependency audit found zero vulnerabilities;
+redacted source/history secret scans and the explicit public-source export passed.
+Workflow actions are pinned to official Node.js 24 runtime commits for checkout
+v7.0.1, setup-node v7.0.0 and upload-artifact v7.0.2.
+
+Initial local coverage runs exceeded 5-second deadlines in backend cases; the
+same two cases passed in isolation without coverage. The local coverage rerun
+uses 15-second test/hook deadlines. CI retains its existing 5-second deadlines,
+behavior assertions and coverage thresholds.
+
+Native platform results and publication are established by the new tag's Actions
+run, not by local Windows checks. No live providers or real discussions were used.
+
 ## Public release automation (2026-10-08)
 
 Scope: configure the official installation URLs and publish version tags only after
